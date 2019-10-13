@@ -1,4 +1,4 @@
-# BATs - Bulk Assembly of Transcriptomes
+# yabtap - Yet another bulk transcriptome assembly pipeline
 
 This snakemake pipeline is useful for managing transcriptome assemblies over many sequencing runs. 
 It takes a config file defining the samples, the libraries that belong to those samples, and any associated metadata. 
