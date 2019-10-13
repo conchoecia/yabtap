@@ -18,22 +18,12 @@ trimmomatic = "/usr/local/bin/Trimmomatic-0.35"
 maxthreads = 90
 dockeruser = "dschultz"
 curr_dir = os.getcwd()
-print(curr_dir)
+#print(curr_dir)
 
 config["rna_f"] = {}
 config["rna_r"] = {}
 config["input_reads"] = []
 
-# First, assert that the sample names are all max 12 characters + 4 for 3-letter code and _
-offenders = []
-for sample in config["samples"]:
-   if len(sample) > 16:
-      offenders.append(sample)
-if len(offenders) > 0:
-   print("The following sample names are too long. Max 16 chars")
-   for element in offenders:
-      print("  - {}".format(element))
-   sys.exit()
 
 # Now assert that the sample IDs are max 12 characters
 offenders = []
@@ -42,9 +32,98 @@ for sample in config["samples"]:
    if len(thisid) > 12:
       offenders.append("{} ID:{}".format(sample, thisid))
 if len(offenders) > 0:
+   print( "READ BELOW for instructions on how to fix your config file.")
    print("The following sample IDs are too long. Max 12 chars")
    for element in offenders:
       print("  - {}".format(element))
+   print("""\nTip: When shortening the sample IDs to 12 chars max, make sure that the 
+         ID doesn't contain a \"_\" char. Also, ensure that the sample ID and parameters ID
+         are exactly the same.
+
+         ALLOWED - Sample ID and params ID match:
+            POL_Poeo_meseres_H678-98:
+              id: "H678-98"
+            CTE_Horm_cali_U789089
+              id: "U789089"
+         NOT ALLOWED:
+            POL_Poeo_meseres_H678_98: (Underscore in sampleid)
+              id: "H678_98"
+            CTE_Horm_cali_U789089: (Mismatch of IDs)
+              id: "U7_89089"
+         """)
+
+   sys.exit()
+
+# Now assert that the sample IDs don't have any underscores.
+#  We care because we use this information to parse sample names later on
+#  and delimit using underscores.
+offenders = []
+for sample in config["samples"]:
+   thisid = config["samples"][sample]["id"]
+   if "_" in thisid:
+      offenders.append("{} ID:{}".format(sample, thisid))
+if len(offenders) > 0:
+   print("The following sample IDs contain the underscore character, \"_\". ")
+   for element in offenders:
+      print("  - {}".format(element))
+   print("Please use a dash, \"-\", or another character instead.")
+   print("""\nTip: When removing \"_\" chars from the sample IDs, make sure that the 
+         that the sample ID and parameters ID are exactly the same.
+
+         ALLOWED - Sample ID and params ID match:
+            POL_Poeo_meseres_H678-98:
+              id: "H678-98"
+            CTE_Horm_cali_U789089
+              id: "U789089"
+         NOT ALLOWED:
+            POL_Poeo_meseres_H678_98: (Underscore in sampleid)
+              id: "H678_98"
+            CTE_Horm_cali_U789089: (Mismatch of IDs)
+              id: "U7_89089"
+         """)
+   sys.exit()
+
+# Parse the samplename in the configfile and split the species and id information
+offenders = {}
+for sample in config["samples"]:
+   species = "_".join(sample.split("_")[:-1])
+   sample_id = sample.split("_")[-1]
+   if sample_id != config["samples"][sample]["id"]:
+      offenders[sample] = config["samples"][sample]["id"]
+if len(offenders) > 0:
+   print("The following sample IDs in the samplename don't match the id in the sample parameters.")
+   for key in offenders:
+      print("  - sample: {} id: {}".format(key, offenders[key]))
+   print("""Please ensure that the sample ID and parameters ID are exactly the same.
+
+         ALLOWED - Sample ID and params ID match:
+            POL_Poeo_meseres_H678-98:
+              id: "H678-98"
+            CTE_Horm_cali_U789089
+              id: "U789089"
+         NOT ALLOWED:
+            POL_Poeo_meseres_H678_98: (Underscore in sampleid)
+              id: "H678_98"
+            CTE_Horm_cali_U789089: (Mismatch of IDs)
+              id: "U7_89089"
+         """)
+   sys.exit()
+
+# Now that we have parsed all of the sequence IDs we are confident that we can
+#  correctly split the sample name and sample ID
+# First, assert that the sample names are all max 12 characters + 4 for 3-letter code and _
+offenders = {}
+for sample in config["samples"]:
+   realsample = "_".join(sample.split("_")[:-1])
+   if len(realsample) > 16:
+      offenders[sample] = realsample
+if len(offenders) > 0:
+   print("The following sample names are too long. Max 16 chars")
+   for key in offenders:
+      print("  - String:{} Sample:{}".format(key, offenders[key]))
+   sys.exit()
+
+
 
 # Now we need to change how the SS_lib_type_param is handled
 for sample in config["samples"]:
@@ -63,6 +142,7 @@ for sample in config["samples"]:
       thisd = {"read1": config["samples"][sample]["libs"]["short"][lib]["read1"],
                "read2": config["samples"][sample]["libs"]["short"][lib]["read2"]}
       config["sample_lib"]["{}_{}".format(sample, lib)] = thisd
+
 
 def read_number_from_file(filename):
     with open(filename, "r") as f:
@@ -87,12 +167,12 @@ rule all:
         #make the symlinks
         expand("reads/{sample_lib}_f.fastq.gz", sample_lib = config["sample_lib"]),
         expand("reads/{sample_lib}_r.fastq.gz", sample_lib = config["sample_lib"]),
-        ###trim the reads
+        ##trim the reads
         expand("trimmed/{sample_lib}_{readtype}.trim.fastq.gz", sample_lib = config["sample_lib"], readtype = ["f", "r"]),
         ##now assemble the transcriptomes
-        expand("txomes/raw/trinity_{sample}_raw.fasta", sample = config["samples"]),
-#        ## make it multi-line
-#        #expand("txomes/final/{sample}.fasta", sample = config["samples"]),
+        expand("txomes/raw/{sample}_TRI_raw.fasta", sample = config["samples"]),
+        ## make it multi-line and rename
+        expand("txomes/final/{sample}_TRI.fasta", sample = config["samples"]),
 #        ## transdecoder and translate, rename the pep files
 #        #expand("pepfiles/final/{sample}.pep", sample = config["samples"]),
 #        ## softlinks for /data/ncbi/db
@@ -227,7 +307,7 @@ rule assemble_txome:
         f_paired = lambda w: ["trimmed/{}_{}_f.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]] ,
         r_paired = lambda w: ["trimmed/{}_{}_r.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]]
     output:
-        assemblypath = "txomes/raw/trinity_{sample}_raw.fasta"
+        assemblypath = "txomes/raw/{sample}_TRI_raw.fasta"
     params:
         outpath = "txomes/trinity_{sample}",
         outfasta = "txomes/trinity_{sample}/Trinity.fasta",
@@ -256,33 +336,51 @@ rule assemble_txome:
         rm -rf {params.outpath}
         """
 
-## illumina rule 3
-#rule correct_txome_names:
-#    input:
-#        assem = "txomes/raw/trinity_{sample}_raw.fasta"
-#    output:
-#        fassem = temp("txomes/singleline/singleline_trinity_{sample}.fasta")
-#    params:
-#        samplename = "{sample}"
-#    shell:
-#        """
-#        sed 's/^>TRINITY/>{params.samplename}/' {input.assem} > {output.fassem}
-#        """
-#
+# illumina rule 3
+rule correct_trinity_names:
+    """
+    The goal of this rule is to rename the fasta headers for the transcriptomes
+     into a standardized and more useful string, while ensuring that the headers
+     are still unique identifiers
+
+    The headers start by looking like this:
+      >TRINITY_DN19333_c0_g4_i1 len=202 path=[0:0-201]
+
+    But they actually need to look like this:
+
+                                 11111111112222222222333333333344444444445
+                        12345678901234567890123456789012345678901234567890
+
+    Trinity Headers    >CTE_Genus_specie|201905R_RNA4|19335c11g1i17.23
+    RNAspades Headers  >CTE_Genus_specie|201905R_RNA4|592239g10470i10.23
+    Space for fields        123456789111 123456789111 123456789111111111
+                                     012          012          012345678
+    12 chars for genus_species. Can be anything you want without | char.
+    12 chars for unique_sample identifier
+    """
+    input:
+        assem = "txomes/raw/{sample}_TRI_raw.fasta"
+    output:
+        fassem = "txomes/final/{sample}_TRI.fasta"
+    params:
+        samplename = "{sample}"
+    run:
+        out_handle = open(output.fassem, 'w') #open outfile for writing
+
+        with open(infile, "rU") as handle:
+           for record in SeqIO.parse(handle, "fasta"):
+              record.name = ""
+              record.description = ""
+              recid = record.id.replace("TRINITY_DN", "")
+              recid = recid.replace("_", "")
+              record.id = "{}|{}|{}".format(wildcards.sample,
+                        config["samples"][wildcards.sample]["id"],
+                        recid)
+              SeqIO.write(record, out_handle, "fasta")
+              out_handle.close()
+
+
 ## illumina rule 4
-#rule illumina_txome_single_line_to_multiline:
-#    """
-#    This turns the single line output of Trinity into a multi-line fasta
-#    file that can be indexed and used in something like bwa.
-#    """
-#    input:
-#        fassem = "txomes/singleline/singleline_trinity_{sample}.fasta"
-#    output:
-#        assem = "txomes/final/{sample}.fasta"
-#    run:
-#        singleline_to_multiline(input.fassem, output.assem)
-#
-## illumina rule 5
 #rule translate_txome:
 #    input:
 #        txome = "txomes/final/{sample}.fasta"
@@ -292,7 +390,7 @@ rule assemble_txome:
 #        """
 #        TransDecoder.LongOrfs -t {input.txome}
 #        """
-## illumina rule 5.1
+## illumina rule 5
 #rule trim_transdecoder_names:
 #    """
 #    This trims transdecoder names from an extended string like:
