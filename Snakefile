@@ -7,12 +7,18 @@ Instructions:
     snakemake, and biopython are installed on your Unix computer.
   - Execute the following command: `snakemake --cores 45`, replacing `45`
     with the number of threads available on your machine.
+
 """
+#We add several things to config to allow us to easily access library-level lists.
+# This makes snakemake more amenable to the nested config file.
+#
+#config["sample_lib"]
+
 import os
 import sys
 from Bio import SeqIO
 import shutil
-
+import pandas as pd
 configfile: "config.yaml"
 trimmomatic = "/usr/local/bin/Trimmomatic-0.35"
 maxthreads = 90
@@ -23,7 +29,6 @@ curr_dir = os.getcwd()
 config["rna_f"] = {}
 config["rna_r"] = {}
 config["input_reads"] = []
-
 
 # Now assert that the sample IDs are max 12 characters
 offenders = []
@@ -51,7 +56,6 @@ if len(offenders) > 0:
             CTE_Horm_cali_U789089: (Mismatch of IDs)
               id: "U7_89089"
          """)
-
    sys.exit()
 
 # Now assert that the sample IDs don't have any underscores.
@@ -143,8 +147,9 @@ for sample in config["samples"]:
    for lib in config["samples"][sample]["libs"]["short"]:
       thisd = {"read1": config["samples"][sample]["libs"]["short"][lib]["read1"],
                "read2": config["samples"][sample]["libs"]["short"][lib]["read2"]}
+      for assem_type in config["assembler"]:
+         thisd["kallisto_{}".format(assem_type)] = "counts/temp_index/{}_{}.kallisto".format(sample, assem_type) 
       config["sample_lib"]["{}_{}".format(sample, lib)] = thisd
-
 
 def read_number_from_file(filename):
     with open(filename, "r") as f:
@@ -178,13 +183,24 @@ rule all:
         ## transdecoder and translate, rename the pep files
         expand("pepfiles/final/{sample}_{assembler}.gff3", sample = config["samples"], assembler = config["assembler"]),
         expand("pepfiles/final/{sample}_{assembler}.pep", sample = config["samples"], assembler = config["assembler"]),
-#        ## softlinks for /data/ncbi/db
-#        #expand("/data/ncbi/db/{sample}.fasta",  sample = config["samples"]),
-#        #expand("/data/ncbi/db/{sample}.pep",  sample = config["samples"]),
-#        # make the blast databases
-#        #expand("/data/ncbi/db/{sample}.fasta.nhr",  sample = config["samples"]),
-#        #expand("/data/ncbi/db/{sample}.pep.phr",  sample = config["samples"]),
-#        #expand("/data/ncbi/db/{sample}.dmnd",  sample = config["samples"]),
+        # count libs with kallisto
+        expand("counts/kallisto/{sample_lib}_{assembler}/abundance.tsv", sample_lib = config["sample_lib"], assembler = config["assembler"]),
+        expand("{}/counts/kallisto/{{sample_lib}}_{{assembler}}/abundance.tsv".format(config["blastdb"]), sample_lib = config["sample_lib"], assembler = config["assembler"]),
+        expand("{}/counts/kallisto/{{sample_lib}}_{{assembler}}/run_info.json".format(config["blastdb"]), sample_lib = config["sample_lib"], assembler = config["assembler"]),
+        expand("counts/kallisto_merged/{sample}_{assembler}_TPM_kallisto.tsv", sample = config["samples"], assembler = config["assembler"]),
+
+
+        ## softlinks for /data/ncbi/db
+        expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.fasta"),  sample = config["samples"], assembler = config["assembler"]),
+        expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.pep"),  sample = config["samples"], assembler = config["assembler"]),
+        expand("{}/gff/{}".format(config["blastdb"],"{sample}_{assembler}.gff"),  sample = config["samples"], assembler = config["assembler"]),
+        expand("{}/counts/kallisto_merged/{{sample}}_{{assembler}}_TPM_kallisto.tsv".format(config["blastdb"]), sample = config["samples"], assembler = config["assembler"]),
+
+
+        # make the blast databases
+        expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.fasta.nhr"),  sample = config["samples"], assembler = config["assembler"]),
+        expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.pep.phr"),  sample = config["samples"], assembler = config["assembler"]),
+        expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.dmnd"),  sample = config["samples"], assembler = config["assembler"]),
 #        ## make the report
 #        #expand("info/counts/raw/{sample}_raw_count.txt", sample = config["samples"]),
 #        #expand("info/counts/trimmed/{sample}_trimmed_count.txt", sample = config["samples"]),
@@ -448,71 +464,199 @@ rule trim_transdecoder_names_trinity:
               record.id = "{}.{}".format(recprefix, recsuffix)
               SeqIO.write(record, out_handle, "fasta")
         out_handle.close()
-
         # remove the unnecessary files
         if os.path.exists(params.rmdir):
            shutil.rmtree(params.rmdir)
         if os.path.exists(params.checkpoints):
            shutil.rmtree(params.checkpoints)
 
-## illumina rule 7 fasta softlink to db
-#rule softlink_fasta_data:
-#    input:
-#        assem = "txomes/final/{sample}.fasta"
-#    output:
-#        outlink = "/data/ncbi/db/{sample}.fasta"
-#    params:
-#        absln = lambda wildcards: "{}/txomes/final/{}.fasta".format(curr_dir, wildcards.sample)
-#    shell:
-#        """
-#        ln -s {params.absln} {output.outlink}
-#        """
-#
-## illumina rule 8 pep softlink to db
-#rule softlink_pep_data:
-#    input:
-#        pep = "pepfiles/final/{sample}.pep"
-#    output:
-#        outlink = "/data/ncbi/db/{sample}.pep"
-#    params:
-#        absln = lambda wildcards: "{}/pepfiles/final/{}.pep".format(curr_dir, wildcards.sample)
-#    shell:
-#        """
-#        ln -s {params.absln} {output.outlink}
-#        """
-#
-## illumina rule 9
-#rule nucl_db_data:
-#    input:
-#        inp = "/data/ncbi/db/{sample}.fasta"
-#    output:
-#        out = "/data/ncbi/db/{sample}.fasta.nhr"
-#    shell:
-#        """
-#        makeblastdb -in {input.inp} -input_type fasta -dbtype nucl -parse_seqids
-#        """
-#
-## illumina rule 10
-#rule prot_db_data:
-#    input:
-#        inp = "/data/ncbi/db/{sample}.pep"
-#    output:
-#        out = "/data/ncbi/db/{sample}.pep.phr"
-#    shell:
-#        """
-#        makeblastdb -in {input.inp} -input_type fasta -dbtype prot -parse_seqids
-#        """
-#
-## ILLUMINA rule 11
-#rule diamond_data:
-#    input:
-#        pepfile="/data/ncbi/db/{sample}.pep"
-#    output:
-#        ddb = "/data/ncbi/db/{sample}.dmnd"
-#    shell:
-#        """
-#        diamond makedb --in {input.pepfile} -d {output.ddb}
-#        """
+rule make_kallisto_index:
+    """
+    this makes a kallisto index to count kmers with reads later on
+    """
+    input:
+        txome = "txomes/final/{sample}_{assembler}.fasta"
+    output:
+        kindex = temp("counts/temp_index/{sample}_{assembler}.kallisto")
+    threads:
+        1
+    shell:
+        """
+        kallisto index -i {output.kindex} {input.txome}
+        """
+
+rule kallisto_quant:
+    """
+    This performs sample quantification for kallisto
+    """
+    input:
+        kindex = lambda w: config["sample_lib"][w.sample_lib]["kallisto_{}".format(w.assembler)],
+        f = lambda w: "trimmed/{}_f.trim.fastq.gz".format(w.sample_lib),
+        r = lambda w: "trimmed/{}_r.trim.fastq.gz".format(w.sample_lib),
+
+    output:
+        abundance = "counts/kallisto/{sample_lib}_{assembler}/abundance.tsv",
+        run_info  = "counts/kallisto/{sample_lib}_{assembler}/run_info.json",
+    threads:
+        maxthreads
+    params:
+        bootstraps = 100,
+        samplename = lambda w: "{}_{}".format(w.sample_lib, w.assembler),
+    shell:
+        """
+        kallisto quant -i {input.kindex} \
+          -o {params.samplename} \
+          -b {params.bootstraps} \
+          -t {threads} \
+          {input.f} {input.r} ;
+        mv {params.samplename}/abundance.tsv {output.abundance} ;
+        mv {params.samplename}/run_info.json {output.run_info} ;
+        rm -rf {params.samplename}
+        """
+
+rule kallisto_softlinks:
+    """
+    just makes softlinks between the kallisto quantifications and the database directory
+    """
+    input:
+        abundance = "counts/kallisto/{sample_lib}_{assembler}/abundance.tsv",
+        run_info  = "counts/kallisto/{sample_lib}_{assembler}/run_info.json",
+    output:
+        abundance_cp = "{}/counts/kallisto/{{sample_lib}}_{{assembler}}/abundance.tsv".format(config["blastdb"]),
+        run_info_cp  = "{}/counts/kallisto/{{sample_lib}}_{{assembler}}/run_info.json".format(config["blastdb"])
+    params:
+        abun_absln = lambda wildcards: "{}/counts/kallisto/{}_{}/abundance.tsv".format(curr_dir, wildcards.sample_lib, wildcards.assembler),
+        json_absln = lambda wildcards: "{}/counts/kallisto/{}_{}/run_info.json".format(curr_dir, wildcards.sample_lib, wildcards.assembler),
+    shell:
+        """
+        ln -s {params.abun_absln} {output.abundance_cp}
+        ln -s {params.json_absln} {output.run_info_cp}
+        """
+
+rule kallisto_merged:
+    """
+    this makes a merged kallisto results file.
+    Col1 is target_id
+    col2 is length
+    col3-N are the tpms for the samples (column names)
+    """
+    input:
+        tsvs = lambda w: ["counts/kallisto/{}_{}_{}/abundance.tsv".format(w.sample,l,w.assembler) \
+                            for l in config["samples"][w.sample]["libs"]["short"] ]
+    output:
+        merged = "counts/kallisto_merged/{sample}_{assembler}_TPM_kallisto.tsv"
+    threads:
+        1
+    run:
+        # a list of dataframes to access them with an index
+        dfs = []
+        name1 = input.tsvs[0].split("/")[2]
+        dfs.append( pd.read_csv(input.tsvs[0], delimiter = '\t', encoding='utf-8'))
+        dfs[0].drop(["eff_length", "est_counts"], axis = 1, inplace=True)
+        dfs[0].rename(columns={"tpm": name1}, inplace = True)
+
+        for i in range(1,len(input.tsvs)):
+           dfs.append( pd.read_csv(input.tsvs[i], delimiter = '\t', encoding='utf-8'))
+           tempf = dfs[0].merge( dfs[i][["target_id", "tpm"]], left_on='target_id', right_on='target_id')
+           dfs[0] = tempf
+           namei = input.tsvs[i].split("/")[2]
+
+           dfs[0].rename(columns={"tpm": name1}, inplace = True)
+        dfs[0].to_csv(output.merged, sep = '\t', index=False)
+
+rule kallisto_merged_softlinks:
+    """
+    just makes softlinks between the kallisto merged quantifications and the database directory
+    """
+    input:
+        merged = "counts/kallisto_merged/{sample}_{assembler}_TPM_kallisto.tsv"
+    output:
+        abundance_cp = "{}/counts/kallisto_merged/{{sample}}_{{assembler}}_TPM_kallisto.tsv".format(config["blastdb"]),
+    params:
+        abun_absln = lambda wildcards: "{}/counts/kallisto_merged/{}_{}_TPM_kallisto.tsv".format(curr_dir, wildcards.sample, wildcards.assembler),
+    shell:
+        """
+        ln -s {params.abun_absln} {output.abundance_cp}
+        """
+
+
+# illumina rule 7 fasta softlink to db
+rule softlink_fasta_data:
+    input:
+        assem = "txomes/final/{sample}_{assembler}.fasta"
+    output:
+        outlink = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.fasta")
+    params:
+        absln = lambda wildcards: "{}/txomes/final/{}_{}.fasta".format(curr_dir, wildcards.sample, wildcards.assembler)
+    shell:
+        """
+        ln -s {params.absln} {output.outlink}
+        """
+
+# illumina rule 8 pep softlink to db
+rule softlink_pep_data:
+    input:
+        pep = "pepfiles/final/{sample}_{assembler}.pep"
+    output:
+        outlink = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.pep")
+    params:
+        absln = lambda wildcards: "{}/pepfiles/final/{}_{}.pep".format(curr_dir, wildcards.sample, wildcards.assembler)
+    shell:
+        """
+        ln -s {params.absln} {output.outlink}
+        """
+
+rule softlink_gff:
+    input:
+        gff = "pepfiles/final/{sample}_{assembler}.gff3"
+    output:
+        outlink = "{}/gff/{}".format(config["blastdb"],"{sample}_{assembler}.gff")
+    params:
+        absln = lambda wildcards: "{}/pepfiles/final/{}_{}.gff3".format(curr_dir, wildcards.sample, wildcards.assembler)
+    shell:
+        """
+        ln -s {params.absln} {output.outlink}
+        """
+
+# illumina rule 9
+rule nucl_db_data:
+    input:
+        inp = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.fasta")
+    output:
+        out = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.fasta.nhr")
+    params:
+        taxid = lambda w: config["samples"][w.sample]["ncbi_taxid"]
+    shell:
+        """
+        makeblastdb -in {input.inp} -input_type fasta -dbtype nucl \
+          -parse_seqids -taxid {params.taxid}
+        """
+
+# illumina rule 10
+rule prot_db_data:
+    input:
+        inp = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.pep")
+    output:
+        out = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.pep.phr")
+    params:
+        taxid = lambda w: config["samples"][w.sample]["ncbi_taxid"]
+    shell:
+        """
+        makeblastdb -in {input.inp} -input_type fasta -dbtype prot \
+          -parse_seqids -taxid {params.taxid}
+        """
+
+# ILLUMINA rule 11
+rule diamond_data:
+    input:
+        inp = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.pep")
+    output:
+        out = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.dmnd")
+    shell:
+        """
+        diamond makedb --in {input.inp} -d {output.out}
+        """
+
 ## report
 ## this section handles writing a report on all of the samples.
 #
