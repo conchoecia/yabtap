@@ -172,11 +172,12 @@ rule all:
         ##trim the reads
         expand("trimmed/{sample_lib}_{readtype}.trim.fastq.gz", sample_lib = config["sample_lib"], readtype = ["f", "r"]),
         ##now assemble the transcriptomes
-        expand("txomes/raw/{sample}_TRI_raw.fasta", sample = config["samples"]),
+        expand("txomes/raw/{sample}_{assembler}_raw.fasta", sample = config["samples"], assembler = config["assembler"]),
         ## make it multi-line and rename
-        expand("txomes/final/{sample}_TRI.fasta", sample = config["samples"]),
-#        ## transdecoder and translate, rename the pep files
-#        #expand("pepfiles/final/{sample}.pep", sample = config["samples"]),
+        expand("txomes/final/{sample}_{assembler}.fasta", sample = config["samples"], assembler = config["assembler"]),
+        ## transdecoder and translate, rename the pep files
+        expand("pepfiles/final/{sample}_{assembler}.gff3", sample = config["samples"], assembler = config["assembler"]),
+        expand("pepfiles/final/{sample}_{assembler}.pep", sample = config["samples"], assembler = config["assembler"]),
 #        ## softlinks for /data/ncbi/db
 #        #expand("/data/ncbi/db/{sample}.fasta",  sample = config["samples"]),
 #        #expand("/data/ncbi/db/{sample}.pep",  sample = config["samples"]),
@@ -366,6 +367,8 @@ rule correct_trinity_names:
         fassem = "txomes/final/{sample}_TRI.fasta"
     params:
         samplename = "{sample}"
+    threads:
+        1
     run:
         out_handle = open(output.fassem, 'w') #open outfile for writing
 
@@ -382,53 +385,76 @@ rule correct_trinity_names:
         out_handle.close()
 
 
-## illumina rule 4
-#rule translate_txome:
-#    input:
-#        txome = "txomes/final/{sample}.fasta"
-#    output:
-#        outpeps = temp("{sample}.fasta.transdecoder_dir/longest_orfs.pep")
-#    shell:
-#        """
-#        TransDecoder.LongOrfs -t {input.txome}
-#        """
-## illumina rule 5
-#rule trim_transdecoder_names:
-#    """
-#    This trims transdecoder names from an extended string like:
-#      >CHA_Caecosagitta_macrocephala_DS244_DN57546_c0_g1_i1.p1 type:internal len:122 gc:universal CHA_Caecosagitta_macrocephala_DS244_DN57546_c0_g1_i1:1-363(+)
-#    to:
-#      >CHA_Caecosagitta_macrocephala_DS244_DN57546_c0_g1_i1.p1
-#    """
-#    input:
-#        pepfile = "{sample}.fasta.transdecoder_dir/longest_orfs.pep"
-#    output:
-#        renamed = temp("pepfiles/temp/{sample}_longest_orfs_renamed.pep")
-#    shell:
-#        """
-#        bioawk -cfastx '{{printf(">%s\\n%s\\n", $name, $seq)}}' {input.pepfile} > {output.renamed}
-#        """
-#
-## illumina rule 6
-#rule move_and_multiline_peps:
-#    """
-#    This moves the translated txome to its final resting place and
-#    turns it from singleline to multiline.
-#    """
-#    input:
-#        pepfile = "pepfiles/temp/{sample}_longest_orfs_renamed.pep"
-#    output:
-#        pepfinal = "pepfiles/final/{sample}.pep"
-#    params:
-#        rmdir = lambda wildcards: "{}.fasta.transdecoder_dir".format(wildcards.sample),
-#        checkpoints = lambda wildcards: "{}.fasta.transdecoder_dir.__checkpoints_longorfs".format(wildcards.sample)
-#    run:
-#        singleline_to_multiline(input.pepfile, output.pepfinal)
-#        if os.path.exists(params.rmdir):
-#           shutil.rmtree(params.rmdir)
-#        if os.path.exists(params.checkpoints):
-#           shutil.rmtree(params.checkpoints)
-#
+# illumina rule 4
+rule translate_txome_trinity:
+    input:
+        txome = "txomes/final/{sample}_{assembler}.fasta"
+    output:
+        outpeps = "{sample}_{assembler}.fasta.transdecoder_dir/longest_orfs.pep",
+        pepfile = "{sample}_{assembler}.fasta.transdecoder_dir/longest_orfs.gff3"
+    threads:
+        1
+    shell:
+        """
+        TransDecoder.LongOrfs -t {input.txome}
+        """
+
+# illumina rule 4.1
+rule copy_trinity_annotation:
+    """
+    copies the annotation to the txome directory
+    """
+    input:
+        gff = "{sample}_{assembler}.fasta.transdecoder_dir/longest_orfs.gff3"
+    output:
+        gff = "pepfiles/final/{sample}_{assembler}.gff3"
+    threads:
+        1
+    shell:
+        """
+        cp {input.gff} {output.gff}
+        """
+
+# illumina rule 5
+rule trim_transdecoder_names_trinity:
+    """
+    This trims transdecoder names from an extended string like:
+      >POL_Poeo_meseres|V4198-SS8|57524c0g1i1.p2 type:5prime_partial len:104 POL_Poeo_meseres|V4198-SS8|57524c0g1i1:383-72(-)
+    to:
+      >POL_Poeo_meseres|V4198-SS8|57524c0g1i1.p2
+
+    All of the identifiers are still unique
+    """
+    input:
+        pepfile = "{sample}_{assembler}.fasta.transdecoder_dir/longest_orfs.pep",
+        gff = "pepfiles/final/{sample}_{assembler}.gff3"
+    output:
+        pepfinal = "pepfiles/final/{sample}_{assembler}.pep"
+    params:
+        rmdir = lambda wildcards: "{}_{}.fasta.transdecoder_dir".format(wildcards.sample, wildcards.assembler),
+        checkpoints = lambda wildcards: "{}_{}.fasta.transdecoder_dir.__checkpoints_longorfs".format(wildcards.sample, wildcards.assembler)
+    threads:
+        1
+    run:
+        # clean up the fasta file and compress name
+        out_handle = open(output.pepfinal, 'w') #open outfile for writing
+        with open(input.pepfile, "rU") as handle:
+           for record in SeqIO.parse(handle, "fasta"):
+              record.name = ""
+              record.description = ""
+              recprefix = ".".join(record.id.split(".")[:-1])
+              recsuffix = record.id.split(".")[-1]
+              recsuffix = recsuffix.replace("p", "")
+              record.id = "{}.{}".format(recprefix, recsuffix)
+              SeqIO.write(record, out_handle, "fasta")
+        out_handle.close()
+
+        # remove the unnecessary files
+        if os.path.exists(params.rmdir):
+           shutil.rmtree(params.rmdir)
+        if os.path.exists(params.checkpoints):
+           shutil.rmtree(params.checkpoints)
+
 ## illumina rule 7 fasta softlink to db
 #rule softlink_fasta_data:
 #    input:
