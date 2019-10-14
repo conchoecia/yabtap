@@ -27,3 +27,17 @@ The software required for this pipeline:
 
 - Trimming
   - Adapters: The adapters used in the trimming protocol are a collection of all of the adapters found in the Trimmomatic software, and additional adapters for the Illumina smallRNA library prep kit. This pipeline aggressively trims adatpers and favors false positives over allowing some reads with adapters to pass into the normalization and de novo assembly steps.
+
+## Output
+
+This pipeline makes files in the run directory, but also links files to a specified db directory. The structure of the db directory is:
+
+```
+|-counts
+|---kallisto
+|-----Bear_sp1_H7834-182_toepad_TRI
+|-----Bear_sp1_H7384-182_hair_TRI
+|---kallisto_merged
+|-db
+|-gff
+```
