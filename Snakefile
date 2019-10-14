@@ -123,7 +123,9 @@ if len(offenders) > 0:
       print("  - String:{} Sample:{}".format(key, offenders[key]))
    sys.exit()
 
-
+# Everything has passed all our checks, save the split samplenames to each sample
+for sample in config["samples"]:
+   config["samples"][sample]["realSname"] = "_".join(sample.split("_")[:-1])
 
 # Now we need to change how the SS_lib_type_param is handled
 for sample in config["samples"]:
@@ -367,17 +369,17 @@ rule correct_trinity_names:
     run:
         out_handle = open(output.fassem, 'w') #open outfile for writing
 
-        with open(infile, "rU") as handle:
+        with open(input.assem, "rU") as handle:
            for record in SeqIO.parse(handle, "fasta"):
               record.name = ""
               record.description = ""
               recid = record.id.replace("TRINITY_DN", "")
               recid = recid.replace("_", "")
-              record.id = "{}|{}|{}".format(wildcards.sample,
+              record.id = "{}|{}|{}".format(config["samples"][wildcards.sample]["realSname"],
                         config["samples"][wildcards.sample]["id"],
                         recid)
               SeqIO.write(record, out_handle, "fasta")
-              out_handle.close()
+        out_handle.close()
 
 
 ## illumina rule 4
