@@ -176,6 +176,7 @@ rule all:
         expand("reads/{sample_lib}_r.fastq.gz", sample_lib = config["sample_lib"]),
         ##trim the reads
         expand("trimmed/{sample_lib}_{readtype}.trim.fastq.gz", sample_lib = config["sample_lib"], readtype = ["f", "r"]),
+        expand("trimmed/logs/{sample_lib}_trimlog.txt", sample_lib = config["sample_lib"]),
         ##now assemble the transcriptomes
         expand("txomes/raw/{sample}_{assembler}_raw.fasta", sample = config["samples"], assembler = config["assembler"]),
         ## make it multi-line and rename
@@ -195,8 +196,6 @@ rule all:
         expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.pep"),  sample = config["samples"], assembler = config["assembler"]),
         expand("{}/gff/{}".format(config["blastdb"],"{sample}_{assembler}.gff"),  sample = config["samples"], assembler = config["assembler"]),
         expand("{}/counts/kallisto_merged/{{sample}}_{{assembler}}_TPM_kallisto.tsv".format(config["blastdb"]), sample = config["samples"], assembler = config["assembler"]),
-
-
         # make the blast databases
         expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.fasta.nhr"),  sample = config["samples"], assembler = config["assembler"]),
         expand("{}/db/{}".format(config["blastdb"], "{sample}_{assembler}.pep.phr"),  sample = config["samples"], assembler = config["assembler"]),
@@ -260,7 +259,7 @@ rule rename_f:
    input:
        illumina_f = "reads/{sample_lib}_f.fastq.gz",
    output:
-       illumina_f = "reads/renamed/{sample_lib}_f.renamed.fastq.gz",
+       illumina_f = temp("reads/renamed/{sample_lib}_f.renamed.fastq.gz"),
    threads:
        1
    shell:
@@ -272,7 +271,7 @@ rule rename_r:
    input:
        illumina_r = "reads/{sample_lib}_r.fastq.gz",
    output:
-       illumina_r = "reads/renamed/{sample_lib}_r.renamed.fastq.gz"
+       illumina_r = temp("reads/renamed/{sample_lib}_r.renamed.fastq.gz")
    threads:
        1
    shell:
@@ -301,17 +300,19 @@ rule trim_pairs:
         f = "reads/renamed/{sample_lib}_f.renamed.fastq.gz",
         r = "reads/renamed/{sample_lib}_r.renamed.fastq.gz",
         trim_jar = os.path.join(trimmomatic, "trimmomatic-0.35.jar"),
-        adapter_path = "adapters/TruNexx.fa"
+        adapter_path = "adapters/all_seqs.fa"
     output:
         f = "trimmed/{sample_lib}_f.trim.fastq.gz",
         r = "trimmed/{sample_lib}_r.trim.fastq.gz",
         u1= temp("trimmed/{sample_lib}_f.trim.unpaired.fastq.gz"),
-        u2= temp("trimmed/{sample_lib}_r.trim.unpaired.fastq.gz")
+        u2= temp("trimmed/{sample_lib}_r.trim.unpaired.fastq.gz"),
+        trimlog = "trimmed/logs/{sample_lib}_trimlog.txt"
     threads:
         maxthreads
     shell:
         """java -jar {input.trim_jar} PE \
         -phred33 -threads {threads} \
+        -trimlog {output.trimlog} \
         {input.f} {input.r} \
         {output.f} \
         {output.u1} \
