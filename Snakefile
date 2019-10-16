@@ -176,7 +176,6 @@ rule all:
         expand("reads/{sample_lib}_r.fastq.gz", sample_lib = config["sample_lib"]),
         ##trim the reads
         expand("trimmed/{sample_lib}_{readtype}.trim.fastq.gz", sample_lib = config["sample_lib"], readtype = ["f", "r"]),
-        expand("trimmed/logs/{sample_lib}_trimlog.txt", sample_lib = config["sample_lib"]),
         ##now assemble the transcriptomes
         expand("txomes/raw/{sample}_{assembler}_raw.fasta", sample = config["samples"], assembler = config["assembler"]),
         ## make it multi-line and rename
@@ -305,14 +304,12 @@ rule trim_pairs:
         f = "trimmed/{sample_lib}_f.trim.fastq.gz",
         r = "trimmed/{sample_lib}_r.trim.fastq.gz",
         u1= temp("trimmed/{sample_lib}_f.trim.unpaired.fastq.gz"),
-        u2= temp("trimmed/{sample_lib}_r.trim.unpaired.fastq.gz"),
-        trimlog = "trimmed/logs/{sample_lib}_trimlog.txt"
+        u2= temp("trimmed/{sample_lib}_r.trim.unpaired.fastq.gz")
     threads:
         maxthreads
     shell:
         """java -jar {input.trim_jar} PE \
         -phred33 -threads {threads} \
-        -trimlog {output.trimlog} \
         {input.f} {input.r} \
         {output.f} \
         {output.u1} \
