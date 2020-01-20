@@ -320,6 +320,10 @@ rule trim_pairs:
 
 # illumina rule 2
 rule assemble_txome:
+    """
+    This assembles one transcriptome for one biological sample from all of the
+     Illumina reads available for that sample.
+    """
     input:
         f_paired = lambda w: ["trimmed/{}_{}_f.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]] ,
         r_paired = lambda w: ["trimmed/{}_{}_r.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]]
