@@ -19,10 +19,9 @@ import sys
 from Bio import SeqIO
 import shutil
 import pandas as pd
+import subprocess
 configfile: "config.yaml"
-trimmomatic = "/usr/local/bin/Trimmomatic-0.35"
-maxthreads = 90
-dockeruser = "dschultz"
+
 curr_dir = os.getcwd()
 #print(curr_dir)
 
@@ -141,12 +140,73 @@ for sample in config["samples"]:
    elif thisss_lib in ["fr", "FR", "Fr", "fR"]:
       config["samples"][sample]["SS_lib_type"] = "--SS_lib_type FR"
 
+# method for downloading SRA data
+def parse_SRA(sample):
+   """
+   This handles downloading SRA reads and puts them in reads/SRA/
+
+   the reads are in this format: reads/SRA/SRAXXXXXX.f.fastq.gz
+   """
+   # make sure that there are not also short reads
+   for this_one in ["read1", "read2"]:
+      if this_one in config["samples"][sample]["libs"]["short"][lib]:
+         raise Exception("""If you have an SRA for a library you must not
+         also specify 'read1' or 'read2' for that library.""")
+   # now download the reads if they don't exist
+   #  the only thing that we care about are the final fq.gz files
+   this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
+   SRA_R1_gz = "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)
+   SRA_R2_gz = "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)
+   if not os.path.exists(SRA_R1_gz) or not os.path.exists(SRA_R2_gz):
+      # the fastq.gz reads don't exist, so let's start from the beginning
+      this_SRA_path = os.path.join(config["srapath"],
+                        "sra/{}.sra".format(this_SRA_code))
+      if not os.path.exists(this_SRA_path):
+         subprocess.call("prefetch -v {}".format(this_SRA_code), shell=True)
+      # now make sure that the SRA file is there after downloading
+      if not os.path.exists(this_SRA_path):
+         raise Exception("Downloading {} failed.".format(this_SRA_code))
+      else:
+         print("We found the SRA file: {}".format(this_SRA_path))
+      # now that we have found the SRA we need to split into fastq files
+      SRA_R1 = "reads/SRA/{}.f.fastq".format(this_SRA_code)
+      SRA_R2 = "reads/SRA/{}.r.fastq".format(this_SRA_code)
+      if not os.path.exists(SRA_R1) or not os.path.exists(SRA_R2):
+         # good info on fastq dump here: https://edwards.sdsu.edu/research/fastq-dump/
+         print("  - dumping the SRA file to fastq.gz")
+         cmd = "fastq-dump --outdir testing --gzip --skip-technical  --readids --read-filter pass --dumpbase --split-files --clip {}".format(this_SRA_code)
+         subprocess.call(cmd, shell=True)
+      # now make sure that the SRA was correctly split into fastq.gz files
+      for thisfile in [SRA_R1_gz, SRA_R2_gz]:
+         if not os.path.exists(thisfile):
+            raise Exception("File doesn't exist after zipping: {}".format(thisfile))
+      # now delete the SRA file and the ungzipped fastq files
+      for deletethis in [this_SRA_path]:
+         try:
+            os.remove(deletethis)
+         except OSError:
+            pass
+
+# It is also possible to just want to assemble things using SRA values
+#  Snakemake doesn't provide a good way to work with conditionals,
+#  so we must process download the reads and edit the config file first
 #make config_lib pairs for the purpose of making reads
+if not os.path.exists("reads"):
+   os.makedirs("reads")
+if not os.path.exists("reads/SRA"):
+   os.makedirs("reads/SRA")
 config["sample_lib"] = {}
 for sample in config["samples"]:
    for lib in config["samples"][sample]["libs"]["short"]:
-      thisd = {"read1": config["samples"][sample]["libs"]["short"][lib]["read1"],
-               "read2": config["samples"][sample]["libs"]["short"][lib]["read2"]}
+      # check if there is a SRA for this library
+      if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
+         parse_SRA(sample)
+         this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
+         thisd = {"read1": "reads/SRA/{}.fastq.gz".format(this_SRA_code),
+                  "read2": "reads/SRA/{}.fastq.gz".format(this_SRA_code)}
+      else:
+         thisd = {"read1": config["samples"][sample]["libs"]["short"][lib]["read1"],
+                  "read2": config["samples"][sample]["libs"]["short"][lib]["read2"]}
       for assem_type in config["assembler"]:
          thisd["kallisto_{}".format(assem_type)] = "counts/temp_index/{}_{}.kallisto".format(sample, assem_type) 
       config["sample_lib"]["{}_{}".format(sample, lib)] = thisd
@@ -298,7 +358,7 @@ rule trim_pairs:
     input:
         f = "reads/renamed/{sample_lib}_f.renamed.fastq.gz",
         r = "reads/renamed/{sample_lib}_r.renamed.fastq.gz",
-        trim_jar = os.path.join(trimmomatic, "trimmomatic-0.35.jar"),
+        trim_jar = os.path.join(config["trimmomatic"], "trimmomatic-0.35.jar"),
         adapter_path = "adapters/all_seqs.fa"
     output:
         f = "trimmed/{sample_lib}_f.trim.fastq.gz",
@@ -306,7 +366,7 @@ rule trim_pairs:
         u1= temp("trimmed/{sample_lib}_f.trim.unpaired.fastq.gz"),
         u2= temp("trimmed/{sample_lib}_r.trim.unpaired.fastq.gz")
     threads:
-        maxthreads
+        config["maxthreads"]
     shell:
         """java -jar {input.trim_jar} PE \
         -phred33 -threads {threads} \
@@ -332,12 +392,12 @@ rule assemble_txome:
     params:
         outpath = "txomes/trinity_{sample}",
         outfasta = "txomes/trinity_{sample}/Trinity.fasta",
-        dockeruser = dockeruser,
+        dockeruser = config["dockeruser"],
         sslibtype = lambda wildcards: config["samples"][wildcards.sample]["SS_lib_type"],
         freads = lambda w: ",".join(["`pwd`/trimmed/{}_{}_f.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]]),
         rreads = lambda w: ",".join(["`pwd`/trimmed/{}_{}_r.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]])
     threads:
-        maxthreads
+        config["maxthreads"]
     shell:
         """
         docker run \
@@ -500,7 +560,7 @@ rule kallisto_quant:
         abundance = "counts/kallisto/{sample_lib}_{assembler}/abundance.tsv",
         run_info  = "counts/kallisto/{sample_lib}_{assembler}/run_info.json",
     threads:
-        maxthreads
+        config["maxthreads"]
     params:
         bootstraps = 100,
         samplename = lambda w: "{}_{}".format(w.sample_lib, w.assembler),
