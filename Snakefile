@@ -173,8 +173,8 @@ def parse_SRA(sample):
       SRA_R2 = "reads/SRA/{}.r.fastq".format(this_SRA_code)
       if not os.path.exists(SRA_R1) or not os.path.exists(SRA_R2):
          # good info on fastq dump here: https://edwards.sdsu.edu/research/fastq-dump/
-         print("  - dumping the SRA file to fastq.gz")
-         cmd = "fastq-dump --outdir testing --gzip --skip-technical  --readids --read-filter pass --dumpbase --split-files --clip {}".format(this_SRA_code)
+         print("  - dumping the SRA file to reads/SRA/{ID}_pass_*.fastq.gz")
+         cmd = "fastq-dump --outdir reads/SRA --gzip --skip-technical  --readids --read-filter pass --dumpbase --split-files --clip {}".format(this_SRA_code)
          subprocess.call(cmd, shell=True)
       # now make sure that the SRA was correctly split into fastq.gz files
       for thisfile in [SRA_R1_gz, SRA_R2_gz]:
