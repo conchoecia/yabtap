@@ -202,8 +202,8 @@ for sample in config["samples"]:
       if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
          parse_SRA(sample)
          this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
-         thisd = {"read1": "reads/SRA/{}.fastq.gz".format(this_SRA_code),
-                  "read2": "reads/SRA/{}.fastq.gz".format(this_SRA_code)}
+         thisd = {"read1": "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code),
+                  "read2": "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)}
       else:
          thisd = {"read1": config["samples"][sample]["libs"]["short"][lib]["read1"],
                   "read2": config["samples"][sample]["libs"]["short"][lib]["read2"]}
