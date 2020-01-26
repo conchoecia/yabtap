@@ -11,7 +11,7 @@ The benefits to assembling transcriptomes using yabtap, as opposed to assembling
   - It is reproducible. Trimming and assembly parameters are consistent across samples. This is useful for large-scale comparative studies such as phylogenomics.
   - It is computationally efficient. All steps are handled by Snakemake to ensure that steps are only run when necessary, and are parallelized to finish the assemblies faster than a for-loop based pipeline.
   - It can be restarted easily. If a run crashes, simply execute the snakemake command again and the pipeline will pick up where it left off.
-  - It has useful additional features. yabtap provides transcript counts and makes databases, saving extra hassle.
+  - It has useful additional features. yabtap provides transcript counts and makes databases, automatically downloads SRA entries and converts to fastq files.
 
 ## Requirements
 
@@ -22,6 +22,7 @@ The software required for this pipeline:
 - kallisto
 - bioawk
 - Transdecoder
+- sra toolkit
 
 ## Parameters
 
