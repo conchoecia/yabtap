@@ -202,11 +202,11 @@ for sample in config["samples"]:
       if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
          parse_SRA(sample)
          this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
-         thisd = {"read1": "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code),
-                  "read2": "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)}
+         thisd = {"read1": os.path.abspath("reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)),
+                  "read2": os.path.abspath("reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code))}
       else:
-         thisd = {"read1": config["samples"][sample]["libs"]["short"][lib]["read1"],
-                  "read2": config["samples"][sample]["libs"]["short"][lib]["read2"]}
+         thisd = {"read1": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read1"]),
+                  "read2": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read2"])}
       for assem_type in config["assembler"]:
          thisd["kallisto_{}".format(assem_type)] = "counts/temp_index/{}_{}.kallisto".format(sample, assem_type) 
       config["sample_lib"]["{}_{}".format(sample, lib)] = thisd
