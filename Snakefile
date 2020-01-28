@@ -231,6 +231,8 @@ def singleline_to_multiline(infile, outfile):
 #sample to
 rule all:
     input:
+        # print the adapters file
+        "adapters/all_seqs.fa",
         #make the symlinks
         expand("reads/{sample_lib}_f.fastq.gz", sample_lib = config["sample_lib"]),
         expand("reads/{sample_lib}_r.fastq.gz", sample_lib = config["sample_lib"]),
@@ -274,6 +276,71 @@ rule all:
 #        #expand("info/counts/fasta/{sample}_mb.txt", sample = config["samples"]),
 #        #"report/final_report.txt"
 #
+
+rule make_adapters_file:
+    output:
+        ada = "adapters/all_seqs.fa"
+    threads:
+        1
+    run:
+        with open(output.ada, "w") as f:
+           print(""">PrefixNX/1
+AGATGTGTATAAGAGACAG
+>PrefixNX/2
+AGATGTGTATAAGAGACAG
+>Trans1
+TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG
+>Trans1_rc
+CTGTCTCTTATACACATCTGACGCTGCCGACGA
+>Trans2
+GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG
+>Trans2_rc
+CTGTCTCTTATACACATCTCCGAGCCCACGAGAC
+>PrefixPE/1
+AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT
+>PrefixPE/2
+CAAGCAGAAGACGGCATACGAGATCGGTCTCGGCATTCCTGCTGAACCGCTCTTCCGATCT
+>PCR_Primer1
+AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT
+>PCR_Primer1_rc
+AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATT
+>PCR_Primer2
+CAAGCAGAAGACGGCATACGAGATCGGTCTCGGCATTCCTGCTGAACCGCTCTTCCGATCT
+>PCR_Primer2_rc
+AGATCGGAAGAGCGGTTCAGCAGGAATGCCGAGACCGATCTCGTATGCCGTCTTCTGCTTG
+>FlowCell1
+TTTTTTTTTTAATGATACGGCGACCACCGAGATCTACAC
+>FlowCell2
+TTTTTTTTTTCAAGCAGAAGACGGCATACGA
+>TruSeq2_SE
+AGATCGGAAGAGCTCGTATGCCGTCTTCTGCTTG
+>TruSeq2_PE_f
+AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
+>TruSeq2_PE_r
+AGATCGGAAGAGCGGTTCAGCAGGAATGCCGAG
+>PrefixPE/1-short
+TACACTCTTTCCCTACACGACGCTCTTCCGATCT
+>PrefixPE/2-short
+GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCT
+>PE1
+TACACTCTTTCCCTACACGACGCTCTTCCGATCT
+>PE1_rc
+AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTA
+>PE2
+GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCT
+>PE2_rc
+AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC
+>TruSeq3_IndexedAdapter
+AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC
+>TruSeq3_UniversalAdapter
+AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTA
+>Illumina_recommended_smallRNA
+TGGAATTCTCGGGTGCCAAGG
+>PrefixSmallRNA/1
+TGGAATTCTCGGGTGCCAAGGAACTCCAGTCACACAGTGATCTCGTATGCCGTCTTCTGCTTG
+>PrefixSmallRNA/2
+GATCGTCGGACTGTAGAACTCTGAACGTGTAGATCTCGGTGGTCGCCGTATCATT""", file = f)
+
 ###############################################################
 #  __   __   ___  __   __   __   __   ___  __   __  _       __
 # |__) |__) |__  |__) |__) /  \ /  ` |__  /__` /__` | |\ | / _`
