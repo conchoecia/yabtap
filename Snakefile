@@ -161,13 +161,21 @@ def parse_SRA(sample):
       # the fastq.gz reads don't exist, so let's start from the beginning
       this_SRA_path = os.path.join(config["srapath"],
                         "sra/{}.sra".format(this_SRA_code))
-      if not os.path.exists(this_SRA_path):
-         subprocess.call("prefetch -v {}".format(this_SRA_code), shell=True)
-      # now make sure that the SRA file is there after downloading
-      if not os.path.exists(this_SRA_path):
-         raise Exception("Downloading {} failed.".format(this_SRA_code))
-      else:
-         print("We found the SRA file: {}".format(this_SRA_path))
+      #try to download each 5 times
+      fail_counter = 0
+      done = False
+      while not done:
+         if not os.path.exists(this_SRA_path):
+            subprocess.call("prefetch -v {}".format(this_SRA_code), shell=True)
+            # now make sure that the SRA file is there after downloading
+            if not os.path.exists(this_SRA_path):
+               if fail_counter == 5:
+                  raise Exception("Downloading {} failed 5 times.".format(this_SRA_code))
+               else:
+                  fail_counter += 1
+            else:
+               print("We found the SRA file: {}".format(this_SRA_path))
+               done = True
       # now that we have found the SRA we need to split into fastq files
       SRA_R1 = "reads/SRA/{}.f.fastq".format(this_SRA_code)
       SRA_R2 = "reads/SRA/{}.r.fastq".format(this_SRA_code)
@@ -209,7 +217,28 @@ for sample in config["samples"]:
                   "read2": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read2"])}
       for assem_type in config["assembler"]:
          thisd["kallisto_{}".format(assem_type)] = "counts/temp_index/{}_{}.kallisto".format(sample, assem_type) 
-      config["sample_lib"]["{}_{}".format(sample, lib)] = thisd
+      sample_lib = "{}_{}".format(sample, lib)
+      # this figures out how to trim the data
+      if "trimming" not in config["samples"][sample]:
+         thisd["trimming"] = "normal"
+      else:
+         trim_val = str(config["samples"][sample]["trimming"]).lower()
+         thisd["trimming"] = trim_val
+      assert thisd["trimming"] in ["normal", "strict"]
+      config["sample_lib"][sample_lib] = thisd
+
+#now convert config to table
+sample_dict = []
+for key in config["samples"]:
+   these_values = {}
+   these_values["fileid"] = key
+   for entry in config["samples"][key]:
+      if entry not in ["libs", "GLO", "SS_lib_type"]:
+         these_values[entry] = str(config["samples"][key][entry])
+   sample_dict.append(these_values)
+sample_table = pd.DataFrame(sample_dict)
+sample_table.to_csv("dinos_data_table.tsv", header=True,
+                    sep='\t', index=False, encoding='utf-8')
 
 def read_number_from_file(filename):
     with open(filename, "r") as f:
@@ -231,8 +260,6 @@ def singleline_to_multiline(infile, outfile):
 #sample to
 rule all:
     input:
-        # print the adapters file
-        "adapters/all_seqs.fa",
         #make the symlinks
         expand("reads/{sample_lib}_f.fastq.gz", sample_lib = config["sample_lib"]),
         expand("reads/{sample_lib}_r.fastq.gz", sample_lib = config["sample_lib"]),
@@ -279,12 +306,28 @@ rule all:
 
 rule make_adapters_file:
     output:
-        ada = "adapters/all_seqs.fa"
+        ada = "adapters/adapters_{sample_lib}.fa"
     threads:
         1
     run:
+        option = ""
         with open(output.ada, "w") as f:
-           print(""">PrefixNX/1
+            if config["sample_lib"][wildcards.sample_lib]["trimming"] == "normal":
+               print(""">PrefixPE/1
+TACACTCTTTCCCTACACGACGCTCTTCCGATCT
+>PrefixPE/2
+GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCT
+>PE1
+TACACTCTTTCCCTACACGACGCTCTTCCGATCT
+>PE1_rc
+AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTA
+>PE2
+GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCT
+>PE2_rc
+AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC
+""", file = f)
+            elif config["sample_lib"][wildcards.sample_lib]["trimming"] == "strict":
+               print(""">PrefixNX/1
 AGATGTGTATAAGAGACAG
 >PrefixNX/2
 AGATGTGTATAAGAGACAG
@@ -339,7 +382,8 @@ TGGAATTCTCGGGTGCCAAGG
 >PrefixSmallRNA/1
 TGGAATTCTCGGGTGCCAAGGAACTCCAGTCACACAGTGATCTCGTATGCCGTCTTCTGCTTG
 >PrefixSmallRNA/2
-GATCGTCGGACTGTAGAACTCTGAACGTGTAGATCTCGGTGGTCGCCGTATCATT""", file = f)
+GATCGTCGGACTGTAGAACTCTGAACGTGTAGATCTCGGTGGTCGCCGTATCATT
+""", file = f)
 
 ###############################################################
 #  __   __   ___  __   __   __   __   ___  __   __  _       __
@@ -426,7 +470,7 @@ rule trim_pairs:
         f = "reads/renamed/{sample_lib}_f.renamed.fastq.gz",
         r = "reads/renamed/{sample_lib}_r.renamed.fastq.gz",
         trim_jar = os.path.join(config["trimmomatic"], "trimmomatic-0.35.jar"),
-        adapter_path = "adapters/all_seqs.fa"
+        adapter_path = "adapters/adapters_{sample_lib}.fa"
     output:
         f = "trimmed/{sample_lib}_f.trim.fastq.gz",
         r = "trimmed/{sample_lib}_r.trim.fastq.gz",
