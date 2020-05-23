@@ -147,53 +147,60 @@ def parse_SRA(sample):
 
    the reads are in this format: reads/SRA/SRAXXXXXX.f.fastq.gz
    """
-   # make sure that there are not also short reads
-   for this_one in ["read1", "read2"]:
-      if this_one in config["samples"][sample]["libs"]["short"][lib]:
-         raise Exception("""If you have an SRA for a library you must not
-         also specify 'read1' or 'read2' for that library.""")
-   # now download the reads if they don't exist
-   #  the only thing that we care about are the final fq.gz files
-   this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
-   SRA_R1_gz = "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)
-   SRA_R2_gz = "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)
-   if not os.path.exists(SRA_R1_gz) or not os.path.exists(SRA_R2_gz):
-      # the fastq.gz reads don't exist, so let's start from the beginning
-      this_SRA_path = os.path.join(config["srapath"],
-                        "sra/{}.sra".format(this_SRA_code))
-      #try to download each 5 times
-      fail_counter = 0
-      done = False
-      while not done:
-         if not os.path.exists(this_SRA_path):
-            subprocess.call("prefetch -v {}".format(this_SRA_code), shell=True)
-            # now make sure that the SRA file is there after downloading
-            if not os.path.exists(this_SRA_path):
-               if fail_counter == 5:
-                  raise Exception("Downloading {} failed 5 times.".format(this_SRA_code))
-               else:
-                  fail_counter += 1
-            else:
-               print("We found the SRA file: {}".format(this_SRA_path))
-               done = True
-      # now that we have found the SRA we need to split into fastq files
-      SRA_R1 = "reads/SRA/{}.f.fastq".format(this_SRA_code)
-      SRA_R2 = "reads/SRA/{}.r.fastq".format(this_SRA_code)
-      if not os.path.exists(SRA_R1) or not os.path.exists(SRA_R2):
-         # good info on fastq dump here: https://edwards.sdsu.edu/research/fastq-dump/
-         print("  - dumping the SRA file to reads/SRA/{ID}_pass_*.fastq.gz")
-         cmd = "fastq-dump --outdir reads/SRA --gzip --skip-technical  --readids --read-filter pass --dumpbase --split-files --clip {}".format(this_SRA_code)
-         subprocess.call(cmd, shell=True)
-      # now make sure that the SRA was correctly split into fastq.gz files
-      for thisfile in [SRA_R1_gz, SRA_R2_gz]:
-         if not os.path.exists(thisfile):
-            raise Exception("File doesn't exist after zipping: {}".format(thisfile))
-      # now delete the SRA file and the ungzipped fastq files
-      for deletethis in [this_SRA_path]:
-         try:
-            os.remove(deletethis)
-         except OSError:
-            pass
+   #TODO this isn't great - the TRI dependency is baked in
+   pepfile   = "pepfiles/final/{}_TRI.pep".format(sample)
+   fastafile = "txomes/final/{}_TRI.fasta".format(sample)
+   if os.path.exists(pepfile) and os.path.exists(fastafile):
+      # we don't need to download anythign because these already exist
+      pass
+   else:
+       # make sure that there are not also short reads
+       for this_one in ["read1", "read2"]:
+          if this_one in config["samples"][sample]["libs"]["short"][lib]:
+             raise Exception("""If you have an SRA for a library you must not
+             also specify 'read1' or 'read2' for that library.""")
+       # now download the reads if they don't exist
+       #  the only thing that we care about are the final fq.gz files
+       this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
+       SRA_R1_gz = "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)
+       SRA_R2_gz = "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)
+       if not os.path.exists(SRA_R1_gz) or not os.path.exists(SRA_R2_gz):
+          # the fastq.gz reads don't exist, so let's start from the beginning
+          this_SRA_path = os.path.join(config["srapath"],
+                            "sra/{}.sra".format(this_SRA_code))
+          #try to download each 5 times
+          fail_counter = 0
+          done = False
+          while not done:
+             if not os.path.exists(this_SRA_path):
+                subprocess.call("prefetch -v {}".format(this_SRA_code), shell=True)
+                # now make sure that the SRA file is there after downloading
+                if not os.path.exists(this_SRA_path):
+                   if fail_counter == 5:
+                      raise Exception("Downloading {} failed 5 times.".format(this_SRA_code))
+                   else:
+                      fail_counter += 1
+                else:
+                   print("We found the SRA file: {}".format(this_SRA_path))
+                   done = True
+          # now that we have found the SRA we need to split into fastq files
+          SRA_R1 = "reads/SRA/{}.f.fastq".format(this_SRA_code)
+          SRA_R2 = "reads/SRA/{}.r.fastq".format(this_SRA_code)
+          if not os.path.exists(SRA_R1) or not os.path.exists(SRA_R2):
+             # good info on fastq dump here: https://edwards.sdsu.edu/research/fastq-dump/
+             print("  - dumping the SRA file to reads/SRA/{ID}_pass_*.fastq.gz")
+             cmd = "fastq-dump --outdir reads/SRA --gzip --skip-technical  --readids --read-filter pass --dumpbase --split-files --clip {}".format(this_SRA_code)
+             subprocess.call(cmd, shell=True)
+          # now make sure that the SRA was correctly split into fastq.gz files
+          for thisfile in [SRA_R1_gz, SRA_R2_gz]:
+             if not os.path.exists(thisfile):
+                raise Exception("File doesn't exist after zipping: {}".format(thisfile))
+          # now delete the SRA file and the ungzipped fastq files
+          for deletethis in [this_SRA_path]:
+             try:
+                os.remove(deletethis)
+             except OSError:
+                pass
 
 # It is also possible to just want to assemble things using SRA values
 #  Snakemake doesn't provide a good way to work with conditionals,
@@ -261,10 +268,12 @@ def singleline_to_multiline(infile, outfile):
 rule all:
     input:
         #make the symlinks
-        expand("reads/{sample_lib}_f.fastq.gz", sample_lib = config["sample_lib"]),
-        expand("reads/{sample_lib}_r.fastq.gz", sample_lib = config["sample_lib"]),
+        # This also makes a huge directory. Remove it ASAP.
+        #expand("reads/{sample_lib}_f.fastq.gz", sample_lib = config["sample_lib"]),
+        #expand("reads/{sample_lib}_r.fastq.gz", sample_lib = config["sample_lib"]),
         ##trim the reads
-        expand("trimmed/{sample_lib}_{readtype}.trim.fastq.gz", sample_lib = config["sample_lib"], readtype = ["f", "r"]),
+        # this make a HUGE directory. Just remove it if possible.
+        #expand("trimmed/{sample_lib}_{readtype}.trim.fastq.gz", sample_lib = config["sample_lib"], readtype = ["f", "r"]),
         ##now assemble the transcriptomes
         expand("txomes/raw/{sample}_{assembler}_raw.fasta", sample = config["samples"], assembler = config["assembler"]),
         ## make it multi-line and rename
