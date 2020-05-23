@@ -405,8 +405,8 @@ GATCGTCGGACTGTAGAACTCTGAACGTGTAGATCTCGGTGGTCGCCGTATCATT
 # preprocessing rule 1
 rule make_symlinks:
    output:
-       readsf = "reads/{sample_lib}_f.fastq.gz",
-       readsr = "reads/{sample_lib}_r.fastq.gz"
+       readsf = temp("reads/{sample_lib}_f.fastq.gz"),
+       readsr = temp("reads/{sample_lib}_r.fastq.gz")
    threads:
        1
    run:
