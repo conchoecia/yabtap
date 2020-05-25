@@ -32,222 +32,227 @@ config["input_reads"] = []
 # Now assert that the sample IDs are max 12 characters
 offenders = []
 for sample in config["samples"]:
-   thisid = config["samples"][sample]["id"]
-   if len(thisid) > 12:
-      offenders.append("{} ID:{}".format(sample, thisid))
+    thisid = config["samples"][sample]["id"]
+    if len(thisid) > 12:
+        offenders.append("{} ID:{}".format(sample, thisid))
 if len(offenders) > 0:
-   print( "READ BELOW for instructions on how to fix your config file.")
-   print("The following sample IDs are too long. Max 12 chars")
-   for element in offenders:
-      print("  - {}".format(element))
-   print("""\nTip: When shortening the sample IDs to 12 chars max, make sure that the 
-         ID doesn't contain a \"_\" char. Also, ensure that the sample ID and parameters ID
-         are exactly the same.
+    print( "READ BELOW for instructions on how to fix your config file.")
+    print("The following sample IDs are too long. Max 12 chars")
+    for element in offenders:
+        print("  - {}".format(element))
+    print("""\nTip: When shortening the sample IDs to 12 chars max, make sure that the 
+          ID doesn't contain a \"_\" char. Also, ensure that the sample ID and parameters ID
+          are exactly the same.
 
-         ALLOWED - Sample ID and params ID match:
-            POL_Poeo_meseres_H678-98:
-              id: "H678-98"
-            CTE_Horm_cali_U789089
-              id: "U789089"
-         NOT ALLOWED:
-            POL_Poeo_meseres_H678_98: (Underscore in sampleid)
-              id: "H678_98"
-            CTE_Horm_cali_U789089: (Mismatch of IDs)
-              id: "U7_89089"
-         """)
-   sys.exit()
+          ALLOWED - Sample ID and params ID match:
+             POL_Poeo_meseres_H678-98:
+               id: "H678-98"
+             CTE_Horm_cali_U789089
+               id: "U789089"
+          NOT ALLOWED:
+             POL_Poeo_meseres_H678_98: (Underscore in sampleid)
+               id: "H678_98"
+             CTE_Horm_cali_U789089: (Mismatch of IDs)
+               id: "U7_89089"
+          """)
+    sys.exit()
 
 # Now assert that the sample IDs don't have any underscores.
 #  We care because we use this information to parse sample names later on
 #  and delimit using underscores.
 offenders = []
 for sample in config["samples"]:
-   thisid = config["samples"][sample]["id"]
-   if "_" in thisid:
-      offenders.append("{} ID:{}".format(sample, thisid))
+    thisid = config["samples"][sample]["id"]
+    if "_" in thisid:
+        offenders.append("{} ID:{}".format(sample, thisid))
 if len(offenders) > 0:
-   print("The following sample IDs contain the underscore character, \"_\". ")
-   for element in offenders:
-      print("  - {}".format(element))
-   print("Please use a dash, \"-\", or another character instead.")
-   print("""\nTip: When removing \"_\" chars from the sample IDs, make sure that the 
-         that the sample ID and parameters ID are exactly the same.
+    print("The following sample IDs contain the underscore character, \"_\". ")
+    for element in offenders:
+        print("  - {}".format(element))
+    print("Please use a dash, \"-\", or another character instead.")
+    print("""\nTip: When removing \"_\" chars from the sample IDs, make sure that the 
+          that the sample ID and parameters ID are exactly the same.
 
-         ALLOWED - Sample ID and params ID match:
-            POL_Poeo_meseres_H678-98:
-              id: "H678-98"
-            CTE_Horm_cali_U789089
-              id: "U789089"
-         NOT ALLOWED:
-            POL_Poeo_meseres_H678_98: (Underscore in sampleid)
-              id: "H678_98"
-            CTE_Horm_cali_U789089: (Mismatch of IDs)
-              id: "U7_89089"
-         """)
-   sys.exit()
+          ALLOWED - Sample ID and params ID match:
+             POL_Poeo_meseres_H678-98:
+               id: "H678-98"
+             CTE_Horm_cali_U789089
+               id: "U789089"
+          NOT ALLOWED:
+             POL_Poeo_meseres_H678_98: (Underscore in sampleid)
+               id: "H678_98"
+             CTE_Horm_cali_U789089: (Mismatch of IDs)
+               id: "U7_89089"
+          """)
+    sys.exit()
 
 # Parse the samplename in the configfile and split the species and id information
 offenders = {}
 for sample in config["samples"]:
-   species = "_".join(sample.split("_")[:-1])
-   sample_id = sample.split("_")[-1]
-   if sample_id != config["samples"][sample]["id"]:
-      offenders[sample] = config["samples"][sample]["id"]
+    species = "_".join(sample.split("_")[:-1])
+    sample_id = sample.split("_")[-1]
+    if sample_id != config["samples"][sample]["id"]:
+        offenders[sample] = config["samples"][sample]["id"]
 if len(offenders) > 0:
-   print("The following sample IDs in the samplename don't match the id in the sample parameters.")
-   for key in offenders:
-      print("  - sample: {} id: {}".format(key, offenders[key]))
-   print("""Please ensure that the sample ID and parameters ID are exactly the same.
+    print("The following sample IDs in the samplename don't match the id in the sample parameters.")
+    for key in offenders:
+        print("  - sample: {} id: {}".format(key, offenders[key]))
+    print("""Please ensure that the sample ID and parameters ID are exactly the same.
 
-         ALLOWED - Sample ID and params ID match:
-            POL_Poeo_meseres_H678-98:
-              id: "H678-98"
-            CTE_Horm_cali_U789089
-              id: "U789089"
-         NOT ALLOWED:
-            POL_Poeo_meseres_H678_98: (Underscore in sampleid)
-              id: "H678_98"
-            CTE_Horm_cali_U789089: (Mismatch of IDs)
-              id: "U7_89089"
-         """)
-   sys.exit()
+          ALLOWED - Sample ID and params ID match:
+             POL_Poeo_meseres_H678-98:
+               id: "H678-98"
+             CTE_Horm_cali_U789089
+               id: "U789089"
+          NOT ALLOWED:
+             POL_Poeo_meseres_H678_98: (Underscore in sampleid)
+               id: "H678_98"
+             CTE_Horm_cali_U789089: (Mismatch of IDs)
+               id: "U7_89089"
+          """)
+    sys.exit()
 
 # Now that we have parsed all of the sequence IDs we are confident that we can
 #  correctly split the sample name and sample ID
 # First, assert that the sample names are all max 12 characters + 4 for 3-letter code and _
 offenders = {}
 for sample in config["samples"]:
-   realsample = "_".join(sample.split("_")[:-1])
-   if len(realsample) > 16:
-      offenders[sample] = realsample
+    realsample = "_".join(sample.split("_")[:-1])
+    if len(realsample) > 16:
+        offenders[sample] = realsample
 if len(offenders) > 0:
-   print("The following sample names are too long. Max 16 chars")
-   for key in offenders:
-      print("  - String:{} Sample:{}".format(key, offenders[key]))
-   sys.exit()
+    print("The following sample names are too long. Max 16 chars")
+    for key in offenders:
+        print("  - String:{} Sample:{}".format(key, offenders[key]))
+    sys.exit()
 
 # Everything has passed all our checks, save the split samplenames to each sample
 for sample in config["samples"]:
-   config["samples"][sample]["realSname"] = "_".join(sample.split("_")[:-1])
+    config["samples"][sample]["realSname"] = "_".join(sample.split("_")[:-1])
 
 # Now we need to change how the SS_lib_type_param is handled
 for sample in config["samples"]:
-   thisss_lib = config["samples"][sample]["SS_lib_type"]
-   if thisss_lib in ["None", "NA", "none", "no", "nein"]:
-      config["samples"][sample]["SS_lib_type"] = ""
-   elif thisss_lib in ["rf", "RF", "Rf", "rF"]:
-      config["samples"][sample]["SS_lib_type"] = "--SS_lib_type RF"
-   elif thisss_lib in ["fr", "FR", "Fr", "fR"]:
-      config["samples"][sample]["SS_lib_type"] = "--SS_lib_type FR"
+    thisss_lib = config["samples"][sample]["SS_lib_type"]
+    if thisss_lib in ["None", "NA", "none", "no", "nein"]:
+        config["samples"][sample]["SS_lib_type"] = ""
+    elif thisss_lib in ["rf", "RF", "Rf", "rF"]:
+        config["samples"][sample]["SS_lib_type"] = "--SS_lib_type RF"
+    elif thisss_lib in ["fr", "FR", "Fr", "fR"]:
+        config["samples"][sample]["SS_lib_type"] = "--SS_lib_type FR"
 
 # method for downloading SRA data
 def parse_SRA(sample):
-   """
-   This handles downloading SRA reads and puts them in reads/SRA/
+    """
+    This handles downloading SRA reads and puts them in reads/SRA/
 
-   the reads are in this format: reads/SRA/SRAXXXXXX.f.fastq.gz
-   """
-   #TODO this isn't great - the TRI dependency is baked in
-   pepfile   = "pepfiles/final/{}_TRI.pep".format(sample)
-   fastafile = "txomes/final/{}_TRI.fasta".format(sample)
-   if os.path.exists(pepfile) and os.path.exists(fastafile):
-      # we don't need to download anythign because these already exist
-      pass
-   else:
-       # make sure that there are not also short reads
-       for this_one in ["read1", "read2"]:
-          if this_one in config["samples"][sample]["libs"]["short"][lib]:
-             raise Exception("""If you have an SRA for a library you must not
-             also specify 'read1' or 'read2' for that library.""")
-       # now download the reads if they don't exist
-       #  the only thing that we care about are the final fq.gz files
-       this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
-       SRA_R1_gz = "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)
-       SRA_R2_gz = "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)
-       if not os.path.exists(SRA_R1_gz) or not os.path.exists(SRA_R2_gz):
-          # the fastq.gz reads don't exist, so let's start from the beginning
-          #try to download each 5 times
-          fail_counter = 0
-          done = False
-          while not done:
-             if not os.path.exists(SRA_R1_gz):
-                subprocess.call("fastq-dump --outdir reads/SRA --gzip --skip-technical  --readids --read-filter pass --dumpbase --split-files --clip {}".format(this_SRA_code), shell=True)
-
-                # now make sure that the SRA file is there after downloading
+    the reads are in this format: reads/SRA/SRAXXXXXX.f.fastq.gz
+    """
+    #TODO this isn't great - the TRI dependency is baked in
+    pepfile   = "pepfiles/final/{}_TRI.pep".format(sample)
+    fastafile = "txomes/final/{}_TRI.fasta".format(sample)
+    if os.path.exists(pepfile) and os.path.exists(fastafile):
+        # we don't need to download anythign because these already exist
+        pass
+    else:
+        # make sure that there are not also short reads
+        for this_one in ["read1", "read2"]:
+            if this_one in config["samples"][sample]["libs"]["short"][lib]:
+                raise Exception("""If you have an SRA for a library you must not
+                      also specify 'read1' or 'read2' for that library.""")
+        # now download the reads if they don't exist
+        #  the only thing that we care about are the final fq.gz files
+        this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
+        SRA_R1_gz = "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)
+        SRA_R2_gz = "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)
+        if not os.path.exists(SRA_R1_gz) or not os.path.exists(SRA_R2_gz):
+            # the fastq.gz reads don't exist, so let's start from the beginning
+            #try to download each 5 times
+            fail_counter = 0
+            done = False
+            while not done:
                 if not os.path.exists(SRA_R1_gz):
-                   if fail_counter == 5:
-                      raise Exception("Downloading {} failed 5 times.".format(this_SRA_code))
-                   else:
-                      fail_counter += 1
-                else:
-                   print("We found the SRA file: {}".format(SRA_R1_gz))
-                   done = True
-          # now make sure that the SRA was correctly split into fastq.gz files
-          for thisfile in [SRA_R1_gz, SRA_R2_gz]:
-             if not os.path.exists(thisfile):
-                raise Exception("File doesn't exist after zipping: {}".format(thisfile))
+                    returnval = subprocess.call("fastq-dump --outdir reads/SRA --gzip --skip-technical  --readids --read-filter pass --dumpbase --split-files --clip {}".format(this_SRA_code), shell=True)
+
+                    # now make sure that the SRA file is there after downloading
+                    if os.path.exists(SRA_R1_gz) and returnval == 0:
+                        print("We found the SRA file: {}".format(SRA_R1_gz))
+                        done = True
+                    else:
+                        if fail_counter == 5:
+                            raise Exception("Downloading {} failed 5 times.".format(this_SRA_code))
+                        else:
+                            fail_counter += 1
+                        for rm_this in [SRA_R1_gz, SRA_R2_gz]:
+                            try:
+                                os.remove(rm_this)
+                            except:
+                                pass
+            # now make sure that the SRA was correctly split into fastq.gz files
+            for thisfile in [SRA_R1_gz, SRA_R2_gz]:
+                if not os.path.exists(thisfile):
+                    raise Exception("File doesn't exist after zipping: {}".format(thisfile))
 
 # It is also possible to just want to assemble things using SRA values
 #  Snakemake doesn't provide a good way to work with conditionals,
 #  so we must process download the reads and edit the config file first
 #make config_lib pairs for the purpose of making reads
 if not os.path.exists("reads"):
-   os.makedirs("reads")
+    os.makedirs("reads")
 if not os.path.exists("reads/SRA"):
-   os.makedirs("reads/SRA")
+    os.makedirs("reads/SRA")
 config["sample_lib"] = {}
 for sample in config["samples"]:
-   for lib in config["samples"][sample]["libs"]["short"]:
-      # check if there is a SRA for this library
-      if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
-         parse_SRA(sample)
-         this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
-         thisd = {"read1": os.path.abspath("reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)),
+    for lib in config["samples"][sample]["libs"]["short"]:
+        # check if there is a SRA for this library
+        if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
+            parse_SRA(sample)
+            this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
+            thisd = {"read1": os.path.abspath("reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)),
                   "read2": os.path.abspath("reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code))}
-      else:
-         thisd = {"read1": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read1"]),
-                  "read2": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read2"])}
-      for assem_type in config["assembler"]:
-         thisd["kallisto_{}".format(assem_type)] = "counts/temp_index/{}_{}.kallisto".format(sample, assem_type) 
-      sample_lib = "{}_{}".format(sample, lib)
-      # this figures out how to trim the data
-      if "trimming" not in config["samples"][sample]:
-         thisd["trimming"] = "normal"
-      else:
-         trim_val = str(config["samples"][sample]["trimming"]).lower()
-         thisd["trimming"] = trim_val
-      assert thisd["trimming"] in ["normal", "strict"]
-      config["sample_lib"][sample_lib] = thisd
+        else:
+            thisd = {"read1": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read1"]),
+                    "read2": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read2"])}
+        for assem_type in config["assembler"]:
+            thisd["kallisto_{}".format(assem_type)] = "counts/temp_index/{}_{}.kallisto".format(sample, assem_type) 
+        sample_lib = "{}_{}".format(sample, lib)
+        # this figures out how to trim the data
+        if "trimming" not in config["samples"][sample]:
+            thisd["trimming"] = "normal"
+        else:
+            trim_val = str(config["samples"][sample]["trimming"]).lower()
+            thisd["trimming"] = trim_val
+        assert thisd["trimming"] in ["normal", "strict"]
+        config["sample_lib"][sample_lib] = thisd
 
 #now convert config to table
 sample_dict = []
 for key in config["samples"]:
-   these_values = {}
-   these_values["fileid"] = key
-   for entry in config["samples"][key]:
-      if entry not in ["libs", "GLO", "SS_lib_type"]:
-         these_values[entry] = str(config["samples"][key][entry])
-   sample_dict.append(these_values)
+    these_values = {}
+    these_values["fileid"] = key
+    for entry in config["samples"][key]:
+        if entry not in ["libs", "GLO", "SS_lib_type"]:
+            these_values[entry] = str(config["samples"][key][entry])
+    sample_dict.append(these_values)
 sample_table = pd.DataFrame(sample_dict)
 sample_table.to_csv("dinos_data_table.tsv", header=True,
                     sep='\t', index=False, encoding='utf-8')
 
 def read_number_from_file(filename):
     with open(filename, "r") as f:
-       for line in f:
-           if line.strip():
-               return line.strip()
+        for line in f:
+            if line.strip():
+                return line.strip()
 
 def singleline_to_multiline(infile, outfile):
-   """
-   This function takes a fasta file and wraps it to N characters
-   """
-   out_handle = open(outfile, 'w') #open outfile for writing
+    """
+    This function takes a fasta file and wraps it to N characters
+    """
+    out_handle = open(outfile, 'w') #open outfile for writing
 
-   with open(infile, "rU") as handle:
-      for record in SeqIO.parse(handle, "fasta"):
-         SeqIO.write(record, out_handle, "fasta")
-   out_handle.close()
+    with open(infile, "rU") as handle:
+        for record in SeqIO.parse(handle, "fasta"):
+            SeqIO.write(record, out_handle, "fasta")
+    out_handle.close()
 
 #sample to
 rule all:
@@ -307,7 +312,7 @@ rule make_adapters_file:
         option = ""
         with open(output.ada, "w") as f:
             if config["sample_lib"][wildcards.sample_lib]["trimming"] == "normal":
-               print(""">PrefixPE/1
+                print(""">PrefixPE/1
 TACACTCTTTCCCTACACGACGCTCTTCCGATCT
 >PrefixPE/2
 GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCT
@@ -321,7 +326,7 @@ GTGACTGGAGTTCAGACGTGTGCTCTTCCGATCT
 AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC
 """, file = f)
             elif config["sample_lib"][wildcards.sample_lib]["trimming"] == "strict":
-               print(""">PrefixNX/1
+                print(""">PrefixNX/1
 AGATGTGTATAAGAGACAG
 >PrefixNX/2
 AGATGTGTATAAGAGACAG
@@ -389,35 +394,35 @@ GATCGTCGGACTGTAGAACTCTGAACGTGTAGATCTCGGTGGTCGCCGTATCATT
 
 # preprocessing rule 1
 rule make_symlinks:
-   output:
-       readsf = temp("reads/{sample_lib}_f.fastq.gz"),
-       readsr = temp("reads/{sample_lib}_r.fastq.gz")
-   threads:
-       1
-   run:
-      if not os.path.exists("reads"):
-         print("Making a directory called 'reads'.", file = sys.stderr)
-         os.makedirs("reads")
-      else:
-         print("The 'reads' directory exists already.", file = sys.stderr)
+    output:
+        readsf = temp("reads/{sample_lib}_f.fastq.gz"),
+        readsr = temp("reads/{sample_lib}_r.fastq.gz")
+    threads:
+        1
+    run:
+        if not os.path.exists("reads"):
+            print("Making a directory called 'reads'.", file = sys.stderr)
+            os.makedirs("reads")
+        else:
+            print("The 'reads' directory exists already.", file = sys.stderr)
 
-      #make symlinks for the illumina reads
-      print("Making read symlinks.", file =sys.stderr)
-      print("  - Checking files for sample {}".format(wildcards.sample_lib), file=sys.stderr)
-      for direction in ["read1", "read2"]:
-          rna_f=""
-          if direction == "read1":
-              rna_f = "reads/{}_f.fastq.gz".format(wildcards.sample_lib)
-          elif direction == "read2":
-              rna_f = "reads/{}_r.fastq.gz".format(wildcards.sample_lib)
-          if not os.path.exists(rna_f):
-             print("    - Making a symlink for {}".format(rna_f), file=sys.stderr)
-             reads_path = config["sample_lib"][wildcards.sample_lib][direction]
-             if not os.path.exists(reads_path):
-                raise Exception("{} does not exist.".format(reads_path))
-             os.symlink(reads_path, rna_f)
-          else:
-             print("    - A symlink already exists for {}".format(rna_f), file=sys.stderr)
+        #make symlinks for the illumina reads
+        print("Making read symlinks.", file =sys.stderr)
+        print("  - Checking files for sample {}".format(wildcards.sample_lib), file=sys.stderr)
+        for direction in ["read1", "read2"]:
+            rna_f=""
+            if direction == "read1":
+                rna_f = "reads/{}_f.fastq.gz".format(wildcards.sample_lib)
+            elif direction == "read2":
+                rna_f = "reads/{}_r.fastq.gz".format(wildcards.sample_lib)
+            if not os.path.exists(rna_f):
+                print("    - Making a symlink for {}".format(rna_f), file=sys.stderr)
+                reads_path = config["sample_lib"][wildcards.sample_lib][direction]
+                if not os.path.exists(reads_path):
+                    raise Exception("{} does not exist.".format(reads_path))
+                os.symlink(reads_path, rna_f)
+            else:
+                print("    - A symlink already exists for {}".format(rna_f), file=sys.stderr)
 
 rule rename_f:
    input:
