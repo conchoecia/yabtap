@@ -165,6 +165,7 @@ def parse_SRA(sample):
         SRA_R1_gz = "reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)
         SRA_R2_gz = "reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code)
         if not os.path.exists(SRA_R1_gz) or not os.path.exists(SRA_R2_gz):
+            print("Downloading {} reads. Be patient, NCBI downloads are very slow.".format(this_SRA_code))
             # the fastq.gz reads don't exist, so let's start from the beginning
             #try to download each 5 times
             fail_counter = 0
