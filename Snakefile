@@ -211,6 +211,10 @@ for sample in config["samples"]:
             thisd = {"read1": os.path.abspath("reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)),
                   "read2": os.path.abspath("reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code))}
         else:
+            if not "read1" in config["samples"][sample]["libs"]["short"][lib]:
+                raise IOError("{} is missing read1".format(sample))
+            if not "read2" in config["samples"][sample]["libs"]["short"][lib]:
+                raise IOError("{} is missing read2".format(sample))
             thisd = {"read1": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read1"]),
                     "read2": os.path.abspath(config["samples"][sample]["libs"]["short"][lib]["read2"])}
         for assem_type in config["assembler"]:
