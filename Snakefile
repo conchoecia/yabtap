@@ -17,6 +17,7 @@ Instructions:
 import os
 import sys
 from Bio import SeqIO
+import multiprocessing
 import shutil
 import pandas as pd
 import subprocess
@@ -132,6 +133,7 @@ for sample in config["samples"]:
 
 # Now we need to change how the SS_lib_type_param is handled
 for sample in config["samples"]:
+    print("checking {}".format(sample))
     thisss_lib = config["samples"][sample]["SS_lib_type"]
     if thisss_lib in ["None", "NA", "none", "no", "nein"]:
         config["samples"][sample]["SS_lib_type"] = ""
@@ -141,11 +143,12 @@ for sample in config["samples"]:
         config["samples"][sample]["SS_lib_type"] = "--SS_lib_type FR"
 
 # method for downloading SRA data
-def parse_SRA(sample):
+def parse_SRA(sample, lib):
     """
     This handles downloading SRA reads and puts them in reads/SRA/
 
     the reads are in this format: reads/SRA/SRAXXXXXX.f.fastq.gz
+                                  reads/SRA/ERRXXXXXX.f.fastq.gz
     """
     #TODO this isn't great - the TRI dependency is baked in
     pepfile   = "pepfiles/final/{}_TRI.pep".format(sample)
@@ -202,6 +205,18 @@ if not os.path.exists("reads"):
 if not os.path.exists("reads/SRA"):
     os.makedirs("reads/SRA")
 config["sample_lib"] = {}
+
+#figure out what we need to download and download it
+SRA_entries = []
+for sample in config["samples"]:
+    for lib in config["samples"][sample]["libs"]["short"]:
+        # check if there is a SRA for this library
+        if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
+            SRA_entries.append([sample, lib])
+with multiprocessing.Pool(processes=min(workflow.cores, 16)) as pool:
+    results = pool.starmap(parse_SRA, SRA_entries)
+print(results)
+
 for sample in config["samples"]:
     for lib in config["samples"][sample]["libs"]["short"]:
         # check if there is a SRA for this library
@@ -402,8 +417,7 @@ rule make_symlinks:
     output:
         readsf = temp("reads/{sample_lib}_f.fastq.gz"),
         readsr = temp("reads/{sample_lib}_r.fastq.gz")
-    threads:
-        1
+    threads: 1
     run:
         if not os.path.exists("reads"):
             print("Making a directory called 'reads'.", file = sys.stderr)
@@ -434,8 +448,7 @@ rule rename_f:
        illumina_f = "reads/{sample_lib}_f.fastq.gz",
    output:
        illumina_f = temp("reads/renamed/{sample_lib}_f.renamed.fastq.gz"),
-   threads:
-       1
+   threads: 1
    shell:
        """
        zcat {input.illumina_f} | awk '{{print (NR%4 == 1) ? "@1_" ++i "/1": $0}}' | gzip -c > {output.illumina_f}
@@ -446,8 +459,7 @@ rule rename_r:
        illumina_r = "reads/{sample_lib}_r.fastq.gz",
    output:
        illumina_r = temp("reads/renamed/{sample_lib}_r.renamed.fastq.gz")
-   threads:
-       1
+   threads: 1
    shell:
        """
        zcat {input.illumina_r} | awk '{{print (NR%4 == 1) ? "@1_" ++i "/2": $0}}' | gzip -c > {output.illumina_r}
@@ -480,8 +492,7 @@ rule trim_pairs:
         r = "trimmed/{sample_lib}_r.trim.fastq.gz",
         u1= temp("trimmed/{sample_lib}_f.trim.unpaired.fastq.gz"),
         u2= temp("trimmed/{sample_lib}_r.trim.unpaired.fastq.gz")
-    threads:
-        config["maxthreads"]
+    threads: workflow.cores
     shell:
         """java -jar {input.trim_jar} PE \
         -phred33 -threads {threads} \
@@ -511,8 +522,7 @@ rule assemble_txome:
         sslibtype = lambda wildcards: config["samples"][wildcards.sample]["SS_lib_type"],
         freads = lambda w: ",".join(["`pwd`/trimmed/{}_{}_f.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]]),
         rreads = lambda w: ",".join(["`pwd`/trimmed/{}_{}_r.trim.fastq.gz".format(w.sample, x) for x in config["samples"][w.sample]["libs"]["short"]])
-    threads:
-        config["maxthreads"]
+    threads: workflow.cores
     shell:
         """
         docker run \
@@ -560,8 +570,7 @@ rule correct_trinity_names:
         fassem = "txomes/final/{sample}_TRI.fasta"
     params:
         samplename = "{sample}"
-    threads:
-        1
+    threads: 1
     run:
         out_handle = open(output.fassem, 'w') #open outfile for writing
 
@@ -585,8 +594,7 @@ rule translate_txome_trinity:
     output:
         outpeps = "{sample}_{assembler}.fasta.transdecoder_dir/longest_orfs.pep",
         pepfile = "{sample}_{assembler}.fasta.transdecoder_dir/longest_orfs.gff3"
-    threads:
-        1
+    threads: 1
     shell:
         """
         TransDecoder.LongOrfs -t {input.txome}
@@ -601,8 +609,7 @@ rule copy_trinity_annotation:
         gff = "{sample}_{assembler}.fasta.transdecoder_dir/longest_orfs.gff3"
     output:
         gff = "pepfiles/final/{sample}_{assembler}.gff3"
-    threads:
-        1
+    threads: 1
     shell:
         """
         cp {input.gff} {output.gff}
@@ -626,8 +633,7 @@ rule trim_transdecoder_names_trinity:
     params:
         rmdir = lambda wildcards: "{}_{}.fasta.transdecoder_dir".format(wildcards.sample, wildcards.assembler),
         checkpoints = lambda wildcards: "{}_{}.fasta.transdecoder_dir.__checkpoints_longorfs".format(wildcards.sample, wildcards.assembler)
-    threads:
-        1
+    threads: 1
     run:
         # clean up the fasta file and compress name
         out_handle = open(output.pepfinal, 'w') #open outfile for writing
@@ -655,8 +661,7 @@ rule make_kallisto_index:
         txome = "txomes/final/{sample}_{assembler}.fasta"
     output:
         kindex = temp("counts/temp_index/{sample}_{assembler}.kallisto")
-    threads:
-        1
+    threads: 1
     shell:
         """
         kallisto index -i {output.kindex} {input.txome}
@@ -670,12 +675,10 @@ rule kallisto_quant:
         kindex = lambda w: config["sample_lib"][w.sample_lib]["kallisto_{}".format(w.assembler)],
         f = lambda w: "trimmed/{}_f.trim.fastq.gz".format(w.sample_lib),
         r = lambda w: "trimmed/{}_r.trim.fastq.gz".format(w.sample_lib),
-
     output:
         abundance = "counts/kallisto/{sample_lib}_{assembler}/abundance.tsv",
         run_info  = "counts/kallisto/{sample_lib}_{assembler}/run_info.json",
-    threads:
-        config["maxthreads"]
+    threads: workflow.cores
     params:
         bootstraps = 100,
         samplename = lambda w: "{}_{}".format(w.sample_lib, w.assembler),
@@ -704,6 +707,7 @@ rule kallisto_softlinks:
     params:
         abun_absln = lambda wildcards: "{}/counts/kallisto/{}_{}/abundance.tsv".format(curr_dir, wildcards.sample_lib, wildcards.assembler),
         json_absln = lambda wildcards: "{}/counts/kallisto/{}_{}/run_info.json".format(curr_dir, wildcards.sample_lib, wildcards.assembler),
+    threads: 1
     shell:
         """
         ln -s {params.abun_absln} {output.abundance_cp}
@@ -722,8 +726,7 @@ rule kallisto_merged:
                             for l in config["samples"][w.sample]["libs"]["short"] ]
     output:
         merged = "counts/kallisto_merged/{sample}_{assembler}_TPM_kallisto.tsv"
-    threads:
-        1
+    threads: 1
     run:
         # a list of dataframes to access them with an index
         dfs = []
@@ -751,6 +754,7 @@ rule kallisto_merged_softlinks:
         abundance_cp = "{}/counts/kallisto_merged/{{sample}}_{{assembler}}_TPM_kallisto.tsv".format(config["blastdb"]),
     params:
         abun_absln = lambda wildcards: "{}/counts/kallisto_merged/{}_{}_TPM_kallisto.tsv".format(curr_dir, wildcards.sample, wildcards.assembler),
+    threads: 1
     shell:
         """
         ln -s {params.abun_absln} {output.abundance_cp}
@@ -765,6 +769,7 @@ rule softlink_fasta_data:
         outlink = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.fasta")
     params:
         absln = lambda wildcards: "{}/txomes/final/{}_{}.fasta".format(curr_dir, wildcards.sample, wildcards.assembler)
+    threads: 1
     shell:
         """
         ln -s {params.absln} {output.outlink}
@@ -778,6 +783,7 @@ rule softlink_pep_data:
         outlink = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.pep")
     params:
         absln = lambda wildcards: "{}/pepfiles/final/{}_{}.pep".format(curr_dir, wildcards.sample, wildcards.assembler)
+    threads: 1
     shell:
         """
         ln -s {params.absln} {output.outlink}
@@ -790,6 +796,7 @@ rule softlink_gff:
         outlink = "{}/gff/{}".format(config["blastdb"],"{sample}_{assembler}.gff")
     params:
         absln = lambda wildcards: "{}/pepfiles/final/{}_{}.gff3".format(curr_dir, wildcards.sample, wildcards.assembler)
+    threads: 1
     shell:
         """
         ln -s {params.absln} {output.outlink}
@@ -803,6 +810,7 @@ rule nucl_db_data:
         out = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.fasta.nhr")
     params:
         taxid = lambda w: config["samples"][w.sample]["ncbi_taxid"]
+    threads: 1
     shell:
         """
         makeblastdb -in {input.inp} -input_type fasta -dbtype nucl \
@@ -817,6 +825,7 @@ rule prot_db_data:
         out = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.pep.phr")
     params:
         taxid = lambda w: config["samples"][w.sample]["ncbi_taxid"]
+    threads: 1
     shell:
         """
         makeblastdb -in {input.inp} -input_type fasta -dbtype prot \
@@ -829,6 +838,7 @@ rule diamond_data:
         inp = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.pep")
     output:
         out = "{}/db/{}".format(config["blastdb"],"{sample}_{assembler}.dmnd")
+    threads: 1
     shell:
         """
         diamond makedb --in {input.inp} -d {output.out}

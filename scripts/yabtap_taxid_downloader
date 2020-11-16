@@ -1,0 +1,293 @@
+"""
+program: yabtap_taxid_downloader
+goal: this program generates a yabtap config file for a list of NCBI taxids
+  that are provided. This removes the need to generate the config files by hand.
+  The idea is to then select the entries of interest by hand.
+"""
+
+configfile: "config.yaml"
+minreads = 9999999
+maxreads = 499999999
+
+import ast
+from Bio import Entrez
+import numpy as np
+import os
+import pandas as pd
+import subprocess
+from subprocess import check_output
+
+taxids = {6040:    "POR", # sponges
+          10197:   "CTE", # ctenophores
+          10226:   "PLA", # placozoa
+          6073:    "CNI", # cnidaria
+          28009:   "CHN", # choanos
+          2687318: "FIL", # filasteria
+          127916:  "ICH", # icthyosporea
+          42461:   "OIC", # opisthokont incertae sedis
+          2686024: "ROT"  # rotosphaerida
+          }
+
+# If the bioproject falls into any of these categories, add this text
+Bioprojects_of_interest = {
+     "PRJNA213480": "P bach genome seqeuncing and assembly. Moroz et al 2014",
+     "PRJNA396415": "2017 Moroz Lab ctenophore phylogenomics and neuroscience. Also Whelan et al 2017.",
+     "PRJNA316185": "Simion et al 2017 - A large and consisteny phylogenomic dataset...",
+     "PRJNA281977": "Horm. californensis GoC reads",
+     "PRJNA544471": "Vampyroctena paper",
+     "PRJEB28334" : "Comb row transcriptomes",
+    }
+
+#email darrin.schultz91@gmail.com
+#api   257f2986e60d4ca535ad9cfbb190d60ff009
+
+myemail="darrin.schultz91@gmail.com"
+myapi="257f2986e60d4ca535ad9cfbb190d60ff009"
+
+
+rule all:
+    input:
+        expand("output/SRA_list_{taxid}.tsv", taxid = taxids.keys()),
+        expand("output/groupby_biosample/SRA_list_{taxid}.groupbysample", taxid = taxids.keys()),
+        expand("output/groupby_biosample/filtered/SRA_list_{taxid}.filtered.groupbysample", taxid = taxids.keys()),
+        expand("output/groupby_biosample/filtered_not_in_config/SRA_list_{taxid}.filtered.not_in_config.groupbysample", taxid = taxids.keys()),
+        "output/config/final_config.yaml"
+
+
+rule query_NCBI_for_taxon:
+    """This rule makes a spreadsheet for each taxid.
+      The important fields that it will keep track of are:
+        - SRA ID
+        - Biosample ID
+        - genus
+        - species
+        - tissue
+        - number of reads
+        - Total number of bases
+        - NCBI Taxid
+        - Publication
+        - url
+    """
+    output:
+        tsv = "output/SRA_list_{taxid}.tsv"
+    params:
+        thistaxid = lambda wildcards: wildcards.taxid
+    run:
+        Entrez.email = myemail
+        Entrez.api_key = myapi
+        querystring = """(((txid{}[Organism:exp]) AND "library layout paired"[Properties]) AND "biomol rna"[Properties]) AND "platform illumina"[Properties]""".format(params.thistaxid)
+        handle = Entrez.esearch(db="sra", term=querystring, retmax = '100000')
+        record = Entrez.read(handle)
+        if not os.path.exists("sra_db"):
+            os.makedirs("sra_db")
+        if not os.path.exists("sra_db/{}".format(params.thistaxid)):
+            os.makedirs("sra_db/{}".format(params.thistaxid))
+        outfile = "sra_db/sra_entry_{}.tsv".format(params.thistaxid)
+        list_of_entries = []
+        #print(record)
+        record_counter = 1
+        for thisrecord in record["IdList"]:
+            print("Record #{} - {}".format(record_counter, thisrecord))
+            thisentry = {}
+            thisentry["sra_uid"] = int(thisrecord)
+            tempfile = os.path.abspath("sra_db/{}/{}.xml".format(params.thistaxid, thisrecord))
+            # now we will parse the XML file to get all of these fields.
+            # I can't figure out XML. It's also really messy and inconsistent
+            # Sometimes the file size is very small
+            if not os.path.exists(tempfile) or os.stat(tempfile).st_size == 0:
+                done = False
+                donecounter = 0
+                if not done:
+                    thisquery = """esearch -db sra -query "{}[uid]" | efetch -format xml > {}""".format(thisrecord, tempfile)
+                    try:
+                        subprocess.run(thisquery, shell=True)
+                        if os.stat(tempfile).st_size != 0:
+                            done = True
+                        else:
+                            donecounter += 1
+                    except:
+                        print("Downloading {} didn't work on try {}. Trying again.".format(thisrecord, donecounter))
+                        donecounter += 1
+                    if donecounter == 5:
+                        raise IOError("Downloading {} didn't work at the esearch stage".format(thisrecord))
+            # get the SRA entry
+            # get the biosample
+            samplequery = """cat {} | grep 'BioSample'""".format(tempfile)
+            thisentry["biosample"] = check_output(samplequery, shell=True).decode("utf-8").split("\n")[0].split(">")[1].split("<")[0]
+            # now get bioproject
+            thisentry["bioproject"] = "NA"
+            samplequery = """cat {} | grep 'BioProject' | \
+                              grep -v '<STUDY' | \
+                              grep -v '<DB>'""".format(tempfile)
+            try:
+                # there is occassionally no bioproject.
+                bioproject = check_output(samplequery, shell=True).decode("utf-8").split("\n")[0].split(">")[1].split("<")[0]
+                thisentry["bioproject"] = bioproject
+            except:
+                pass
+            #now get the read length
+            samplequery = """cat {} | grep 'Read index'""".format(tempfile)
+            try:
+                # sometimes the entry doesn't have the average readlength
+                process_this = check_output(samplequery, shell=True).decode("utf-8").split("\n")[0]
+                thisentry["readlen"] = int([x for x in process_this.split() if "average" in x][0].split("=")[1].replace("\"", "").split(".")[0])
+            except:
+                thisentry["readlen"] = 999999
+            # now get the genus and species, pus taxid
+            samplequery = """cat {} | grep 'organism=' | grep -v '<TAG>' | \
+                                  grep -v '<DESCRIPTION>' | \
+                                  grep -v '<VALUE>' | \
+                                  grep -v '<DESIGN_DESCRIPTION>' | \
+                                  grep -v '<STUDY_ABSTRACT>' | \
+                                  grep -v '<STUDY_DESCRIPTION>'""".format(tempfile)
+            process_this = check_output(samplequery, shell=True).decode("utf-8")
+            organism = " ".join([x for x in process_this.split("organism=")][1].split()[0::]).replace("\"", "").split(">")[0]
+            for replace_this in [">", "<", "="]:
+                organism = organism.replace(replace_this, "")
+            print(organism)
+            thisentry["genus"] = organism.split()[0]
+            thisentry["species"] = " ".join(organism.split()[1::])
+            if thisentry["species"] == "":
+                thisentry["species"] = "NA"
+            thisentry["taxid"] = int([x for x in process_this.split() if "tax_id" in x][0].split("tax_id")[1].split("\"")[1])
+            record_counter += 1
+            # now add the description of the bioproject
+            try:
+                thisentry["bioproject_description"] = Bioprojects_of_interest[thisentry["bioproject"]]
+            except:
+                thisentry["bioproject_description"] = "No description"
+            # now get the SR number and the total spots
+            # Turns out that some results have multiple runs
+            #  so we do this in a loop
+            samplequery = """cat {} | grep 'accession=' | grep '<RUN'""".format(tempfile)
+            process_this = [ x for x in check_output(samplequery, shell=True).decode("utf-8").split("\n") if "accession" in x]
+            for thisline in process_this:
+                thisentry["accession"] = [x for x in thisline.split() if "accession" in x][0].split("=")[1].replace("\"", "")
+                thisentry["total_spots"] = int([x for x in thisline.split() if "total_spots" in x][0].split("=")[1].split()[0].replace("\"", ""))
+                thisentry["total_bases"] = int([x for x in thisline.split() if "total_bases" in x][0].split("=")[1].split()[0].replace("\"", ""))
+                thisentry["published"] = " ".join([x for x in thisline.split("published")][1].split()[0:2]).replace("\"", "").replace("=", "")
+                print(thisentry)
+                list_of_entries.append(thisentry)
+
+            print()
+            record_counter += 1
+        df = pd.DataFrame(list_of_entries)
+        df = df.drop_duplicates()
+        df.to_csv(output.tsv, sep="\t", header = True, index = False)
+
+rule table_to_biosample_unfiltered:
+    """
+    This takes the table of results and outputs another table grouped by biosample
+    """
+    input:
+        tsv = "output/SRA_list_{taxid}.tsv"
+    output:
+        sample = "output/groupby_biosample/SRA_list_{taxid}.groupbysample"
+    params:
+        thistaxid = lambda wildcards: wildcards.taxid
+    run:
+        df = pd.read_csv(input.tsv, sep = "\t")
+        grouped = df.groupby(by="biosample")["accession"].apply(list)
+        df2 = df.drop_duplicates(subset='biosample', keep="first")
+        out = df2.merge(grouped, left_on='biosample', right_on='biosample',
+                        how="outer", suffixes=('_x', ''))
+        out = out.drop(['accession_x'], axis=1)
+
+        # now add totbases and totspots
+        totbase = df.groupby(by="biosample").sum()[["total_bases"]]
+        out = out.merge(totbase, left_on='biosample', right_on='biosample',
+                        how="outer", suffixes=('_x', ''))
+        print(out.columns)
+        out = out.drop(['total_bases_x'], axis=1)
+
+        totspot = df.groupby(by="biosample").sum()[["total_spots"]]
+        out = out.merge(totspot, left_on='biosample', right_on='biosample',
+                        how="outer", suffixes=('_x', ''))
+        out = out.drop(['total_spots_x'], axis=1)
+        out["three_char_code"] = taxids[int(params.thistaxid)]
+        out.to_csv(output.sample, sep = "\t", index = False)
+
+rule filter_biosample_table:
+    """
+    This takes the biosample-grouped table and filters the rows based
+     on number of reads and a list of Biosamples that we know we don't
+     need.
+    """
+    input:
+        sample = "output/groupby_biosample/SRA_list_{taxid}.groupbysample"
+    output:
+        filtered = "output/groupby_biosample/filtered/SRA_list_{taxid}.filtered.groupbysample"
+    params:
+        thistaxid = lambda wildcards: wildcards.taxid
+    run:
+        df = pd.read_csv(input.sample, sep = "\t")
+        print(df.columns)
+        df = df.loc[df["total_spots"] > minreads, ]
+        df = df.loc[df["total_spots"] < maxreads, ]
+        df = df.loc[~df['biosample'].isin(config["already_have_dont_output"]),]
+        df.to_csv(output.filtered, sep = "\t", index = False)
+
+rule filter_biosample_table_nothing_in_config_file:
+    """
+    This filters through the filtered-by-biosample list.
+    - Also removes the samples in we_want_these_so_put_them_into_config_files
+      This way, you can look at this file to see what things have not yet been
+      output into the final config file.
+    """
+    input:
+        filtered = "output/groupby_biosample/filtered/SRA_list_{taxid}.filtered.groupbysample"
+    output:
+        final = "output/groupby_biosample/filtered_not_in_config/SRA_list_{taxid}.filtered.not_in_config.groupbysample"
+    params:
+        thistaxid = lambda wildcards: wildcards.taxid
+    run:
+        df = pd.read_csv(input.filtered, sep = "\t")
+        df = df.loc[~df['biosample'].isin(config["we_want_these_so_put_them_into_config_files"]),]
+        df.to_csv(output.final, sep = "\t", index = False)
+
+rule final_to_config:
+    """
+    This gathers all the SRAs that are in we_want_these_so_put_them_into_config_files
+    and puts it into a config file.
+    """
+    input:
+        filtered = expand("output/groupby_biosample/filtered/SRA_list_{taxid}.filtered.groupbysample", taxid = taxids.keys())
+    output:
+        final = "output/config/final_config.yaml"
+    run:
+        outhandle = open(output.final, "w")
+        for thisfile in input.filtered:
+            df = pd.read_csv(thisfile, sep = "\t")
+            for index, row in df.iterrows():
+                if row["biosample"] in config["we_want_these_so_put_them_into_config_files"]:
+                    #print(row)
+                    if row["species"] == "" or pd.isnull(row["species"]):
+                        samplekey = "{}_{}_{}".format(
+                            row["three_char_code"],
+                            row["genus"][0:4],
+                            row["biosample"][0:12])
+                    else:
+                        samplekey = "{}_{}_{}_{}".format(
+                            row["three_char_code"],
+                            row["genus"][0:4],
+                            row["species"][0:4],
+                            row["biosample"][0:12])
+                    print("  {}:".format(samplekey), file=outhandle)
+                    print("    sra_uid: {}".format(row["sra_uid"]), file=outhandle)
+                    print("    biosample: {}".format(row["biosample"][0:12]), file=outhandle)
+                    print("    bioproject: {}".format(row["bioproject"]), file=outhandle)
+                    print("    readlen: {}".format(row["readlen"]), file=outhandle)
+                    print("    published: \"{}\"".format(row["published"]), file=outhandle)
+                    print("    total_bases: {}".format(row["total_bases"]), file=outhandle)
+                    print("    total_spots: {}".format(row["total_spots"]), file=outhandle)
+                    print("    genus: \"{}\"".format(row["genus"]), file=outhandle)
+                    print("    species: \"{}\"".format(row["species"]), file=outhandle)
+                    print("    id: \"{}\"".format(row["biosample"][0:12]), file=outhandle)
+                    print("    ncbi_taxid: {}".format(row["taxid"]), file=outhandle)
+                    print("    SS_lib_type: \"RF\"", file=outhandle)
+                    for SRAaccession in ast.literal_eval(row["accession"]):
+                        print("    libs:", file=outhandle)
+                        print("      short:", file=outhandle)
+                        print("        {}:".format(SRAaccession), file=outhandle)
+                        print("          SRA: \"{}\"".format(SRAaccession), file=outhandle)
+        outhandle.close()
