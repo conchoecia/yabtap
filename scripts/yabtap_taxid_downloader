@@ -146,7 +146,7 @@ rule query_NCBI_for_taxon:
                 organism = organism.replace(replace_this, "")
             print(organism)
             thisentry["genus"] = organism.split()[0]
-            thisentry["species"] = " ".join(organism.split()[1::])
+            thisentry["species"] = " ".join(organism.split()[1::]).strip()
             if thisentry["species"] == "":
                 thisentry["species"] = "NA"
             thisentry["taxid"] = int([x for x in process_this.split() if "tax_id" in x][0].split("tax_id")[1].split("\"")[1])
@@ -270,7 +270,7 @@ rule final_to_config:
                         samplekey = "{}_{}_{}_{}".format(
                             row["three_char_code"],
                             row["genus"][0:4],
-                            row["species"][0:4],
+                            row["species"][0:4].strip().replace(".",""),
                             row["biosample"][0:12])
                     print("  {}:".format(samplekey), file=outhandle)
                     print("    sra_uid: {}".format(row["sra_uid"]), file=outhandle)
