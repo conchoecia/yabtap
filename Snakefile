@@ -17,14 +17,61 @@ Instructions:
 import os
 import sys
 from Bio import SeqIO
+from collections import defaultdict
 import multiprocessing
+from pathlib import Path
 import shutil
 import pandas as pd
 import subprocess
+import time
+import yaml
 configfile: "config.yaml"
 
 curr_dir = os.getcwd()
 #print(curr_dir)
+
+"""Get the full lineage for a taxid from Entrez.
+    Returns a dictionary of the lineage that can be added to
+    another dict of metadata.
+
+   This function is from https://github.com/conchoecia/NCBI_assem_summary"""
+def get_lineage(taxid):
+    #Increase query limit to 10/s & get warnings
+    Entrez.email = config["ncbiemail"]
+    #Get one from https://www.ncbi.nlm.nih.gov/account/settings/ page
+    Entrez.api_key= config["ncbiapikey"]
+    handle = Entrez.efetch(db="taxonomy", id=taxid, retmode="xml")
+    records = Entrez.read(handle)
+    lineage = defaultdict(lambda: 'Unclassified')
+    lineage["Bilateria"] = "NO"
+    lineage["Deuterostomia"] = "NO"
+    lineage["Protostomia"] = "NO"
+    lineage["Opisthokonta"] = "NO"
+    lineage["Metazoa"] = "NO"
+    lineage["Organism"] = records[0]['ScientificName']
+    for entry in records[0]['LineageEx']:
+        if entry['Rank'] in ['superkingdom', 'kingdom', 'phylum',
+                             'class', 'order', 'family',
+                             'genus', 'species']:
+            lineage[entry['Rank']] = entry['ScientificName'].split(' ')[-1]
+            lineage["{}_id".format(entry['Rank'])] = int(entry['TaxId'].split(' ')[-1])
+        # entry as integer
+        eai = int(entry["TaxId"])
+        if eai == 33213:
+            lineage["Bilateria"] = "YES"
+        elif eai == 33317:
+            lineage["Protostomia"] = "YES"
+        elif eai == 33511:
+            lineage["Deuterostomia"] = "YES"
+        elif eai == 33154:
+            lineage["Opisthokonta"] = "YES"
+        elif eai == 33208:
+            lineage["Metazoa"] = "YES"
+    lindict = dict(lineage)
+    retdict = {}
+    for key in lindict: # had to do this because dict comp wasn't working
+        retdict[str(key)] = str(lindict[key])
+    return retdict
 
 config["rna_f"] = {}
 config["rna_r"] = {}
@@ -213,15 +260,15 @@ for sample in config["samples"]:
         # check if there is a SRA for this library
         if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
             SRA_entries.append([sample, lib])
-with multiprocessing.Pool(processes=min(workflow.cores, 16)) as pool:
-    results = pool.starmap(parse_SRA, SRA_entries)
-print(results)
+if len(SRA_entries) != 0:
+    with multiprocessing.Pool(processes=min(workflow.cores, 16)) as pool:
+        results = pool.starmap(parse_SRA, SRA_entries)
 
 for sample in config["samples"]:
     for lib in config["samples"][sample]["libs"]["short"]:
         # check if there is a SRA for this library
         if "SRA" in config["samples"][sample]["libs"]["short"][lib]:
-            parse_SRA(sample)
+            parse_SRA(sample, lib)
             this_SRA_code = config["samples"][sample]["libs"]["short"][lib]["SRA"]
             thisd = {"read1": os.path.abspath("reads/SRA/{}_pass_1.fastq.gz".format(this_SRA_code)),
                   "read2": os.path.abspath("reads/SRA/{}_pass_2.fastq.gz".format(this_SRA_code))}
@@ -244,17 +291,52 @@ for sample in config["samples"]:
         assert thisd["trimming"] in ["normal", "strict"]
         config["sample_lib"][sample_lib] = thisd
 
+# now add all the taxid information if it isn't there yet
+# ensures that this only runs once during the pipeline
+from Bio import Entrez
+Path("info/lineage_info").mkdir(parents=True, exist_ok=True)
+for key in config["samples"]:
+    if "parsed_taxid" not in config["samples"][key]:
+        # first check if the lineage file exists
+        lineage_file = "info/lineage_info/{}_lineage.yaml".format(key)
+        lindict = {}
+        if os.path.exists(lineage_file): # just load it
+            print("- Loading tax info for {}".format(key))
+            with open(lineage_file) as f:
+                lindict = yaml.load(f, Loader=yaml.FullLoader)
+                print(lindict)
+        else: # haven't parsed it yet
+            print("- Parsing tax info for {}".format(key))
+            lindict = get_lineage(config["samples"][key]["ncbi_taxid"])
+            with open(lineage_file, 'w') as f:
+                data = yaml.dump(lindict, f)
+            time.sleep(0.5) # just to be safe that we don't over-pull NCBI
+        config["samples"][key]["parsed_taxid"] = lindict
+
 #now convert config to table
 sample_dict = []
 for key in config["samples"]:
     these_values = {}
     these_values["fileid"] = key
     for entry in config["samples"][key]:
-        if entry not in ["libs", "GLO", "SS_lib_type"]:
+        if entry not in ["libs", "GLO", "SS_lib_type", "parsed_taxid"]:
             these_values[entry] = str(config["samples"][key][entry])
+        elif entry == "parsed_taxid":
+            for taxlevel in config["samples"][key]["parsed_taxid"]:
+                these_values["tax_{}".format(taxlevel)] = str(config["samples"][key]["parsed_taxid"][taxlevel])
     sample_dict.append(these_values)
 sample_table = pd.DataFrame(sample_dict)
-sample_table.to_csv("dinos_data_table.tsv", header=True,
+for assembler in ["TRI"]:
+    sample_table["{}_pep_file".format(assembler)] = sample_table.apply(lambda x: "{}/db/{}_{}.pep".format(config["blastdb"], x["fileid"], assembler), axis=1)
+    sample_table["{}_nuc_file".format(assembler)] = sample_table.apply(lambda x: "{}/db/{}_{}.fasta".format(config["blastdb"], x["fileid"], assembler), axis=1)
+    sample_table["{}_gff_file".format(assembler)] = sample_table.apply(lambda x: "{}/gff/{}_{}.gff".format(config["blastdb"], x["fileid"], assembler), axis=1)
+    sample_table["{}_dmnd_db".format(assembler)] = sample_table.apply(lambda x: "{}/db/{}_{}.dmnd".format(config["blastdb"], x["fileid"], assembler), axis=1)
+sample_table["FINISHED"] = False
+for index, row in sample_table.iterrows():
+    if os.path.exists(row["TRI_pep_file"]):
+        sample_table.loc[index, "FINISHED"] = True
+
+sample_table.to_csv("txome_entry_table.tsv", header=True,
                     sep='\t', index=False, encoding='utf-8')
 
 def read_number_from_file(filename):
@@ -492,7 +574,7 @@ rule trim_pairs:
         r = "trimmed/{sample_lib}_r.trim.fastq.gz",
         u1= temp("trimmed/{sample_lib}_f.trim.unpaired.fastq.gz"),
         u2= temp("trimmed/{sample_lib}_r.trim.unpaired.fastq.gz")
-    threads: workflow.cores
+    threads: 10
     shell:
         """java -jar {input.trim_jar} PE \
         -phred33 -threads {threads} \
